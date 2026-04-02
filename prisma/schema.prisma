@@ -26,6 +26,38 @@ enum AuthProvider {
   local
 }
 
+// =============================================================================
+// PHASE 2: Organization & Workspace Enums
+// =============================================================================
+
+enum MemberStatus {
+  active
+  suspended
+  invited
+  pending
+}
+
+enum WorkspaceVisibility {
+  private    // Only members can see
+  internal   // Organization members can see
+  public     // Anyone can see
+}
+
+enum ProjectVisibility {
+  private
+  workspace
+  organization
+  public
+}
+
+enum InvitationStatus {
+  pending
+  accepted
+  declined
+  expired
+  revoked
+}
+
 // Enums
 enum SubscriptionStatus {
   free
@@ -96,6 +128,12 @@ model Profile {
   updated_projects Project[]       @relation("ProjectUpdater")
   created_columns  Column[]        @relation("ColumnCreator")
   updated_columns  Column[]        @relation("ColumnUpdater")
+
+  // Phase 2: Organization relations
+  organization_members OrganizationMember[]
+  workspace_members    WorkspaceMember[]
+  created_workspaces   Workspace[]    @relation("WorkspaceCreator")
+  sent_invitations     Invitation[]   @relation("InvitationInviter")
 
   @@index([auth_provider])
   @@index([external_id])
@@ -248,6 +286,157 @@ model Bookmark {
 
   @@unique([user_id, project_id])
   @@map("bookmarks")
+}
+
+// =============================================================================
+// PHASE 2: Organization & Workspace Models
+// =============================================================================
+
+model Organization {
+  id           String   @id @default(cuid())
+  name         String   @db.VarChar(100)
+  slug         String   @unique @db.VarChar(100)
+  logo_url     String?
+  description  String?  @db.Text
+  billing_plan String   @default("free") @db.VarChar(50)
+  settings     Json?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  // Relations
+  members     OrganizationMember[]
+  workspaces  Workspace[]
+  roles       Role[]
+  invitations Invitation[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id              String       @id @default(cuid())
+  organization_id String
+  user_id         String
+  role_id         String?
+  status          MemberStatus @default(active)
+  joined_at       DateTime     @default(now())
+  created_at      DateTime     @default(now())
+  updated_at      DateTime     @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  user         Profile      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  role         Role?        @relation(fields: [role_id], references: [id])
+
+  @@unique([organization_id, user_id])
+  @@index([user_id])
+  @@index([role_id])
+  @@map("organization_members")
+}
+
+model Role {
+  id              String   @id @default(cuid())
+  organization_id String?
+  name            String   @db.VarChar(100)
+  slug            String   @db.VarChar(100)
+  description     String?  @db.VarChar(500)
+  permissions     String[] @default([])
+  is_system       Boolean  @default(false)
+  hierarchy_level Int      @default(0)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  // Relations
+  organization         Organization?        @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  organization_members OrganizationMember[]
+  workspace_members    WorkspaceMember[]
+
+  @@unique([organization_id, slug])
+  @@index([is_system])
+  @@map("roles")
+}
+
+model Workspace {
+  id              String              @id @default(cuid())
+  organization_id String
+  name            String              @db.VarChar(100)
+  slug            String              @db.VarChar(100)
+  description     String?             @db.Text
+  icon            String?             @db.VarChar(50)
+  color           String?             @db.VarChar(20)
+  visibility      WorkspaceVisibility @default(private)
+  settings        Json?
+  position        Int                 @default(0)
+  created_by      String?
+  created_at      DateTime            @default(now())
+  updated_at      DateTime            @updatedAt
+
+  // Relations
+  organization Organization      @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  members      WorkspaceMember[]
+  projects     WorkspaceProject[]
+  creator      Profile?          @relation("WorkspaceCreator", fields: [created_by], references: [id])
+
+  @@unique([organization_id, slug])
+  @@index([visibility])
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id           String       @id @default(cuid())
+  workspace_id String
+  user_id      String
+  role_id      String?
+  status       MemberStatus @default(active)
+  joined_at    DateTime     @default(now())
+  created_at   DateTime     @default(now())
+  updated_at   DateTime     @updatedAt
+
+  // Relations
+  workspace Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  user      Profile   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  role      Role?     @relation(fields: [role_id], references: [id])
+
+  @@unique([workspace_id, user_id])
+  @@index([user_id])
+  @@map("workspace_members")
+}
+
+model WorkspaceProject {
+  id           String   @id @default(cuid())
+  workspace_id String
+  project_id   String
+  position     Int      @default(0)
+  created_at   DateTime @default(now())
+
+  // Relations - Note: Project relation will be updated separately
+  workspace Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+
+  @@unique([workspace_id, project_id])
+  @@index([project_id])
+  @@map("workspace_projects")
+}
+
+model Invitation {
+  id              String           @id @default(cuid())
+  organization_id String
+  email           String           @db.VarChar(255)
+  role_id         String?
+  invited_by      String
+  token           String           @unique @db.VarChar(255)
+  status          InvitationStatus @default(pending)
+  expires_at      DateTime
+  accepted_at     DateTime?
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  inviter      Profile      @relation("InvitationInviter", fields: [invited_by], references: [id])
+
+  @@index([email])
+  @@index([token])
+  @@index([status])
+  @@map("invitations")
 }
 
 // =============================================================================
