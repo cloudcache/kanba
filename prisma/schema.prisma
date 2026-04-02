@@ -58,6 +58,77 @@ enum InvitationStatus {
   revoked
 }
 
+// =============================================================================
+// PHASE 3: Field & View Enums
+// =============================================================================
+
+enum FieldType {
+  // Basic types
+  text
+  textarea
+  number
+  currency
+  percent
+  
+  // Date/Time
+  date
+  datetime
+  duration
+  
+  // Selection types
+  select
+  multiselect
+  status
+  priority
+  
+  // Relation types
+  user
+  users
+  relation
+  
+  // Media types
+  attachment
+  url
+  email
+  phone
+  
+  // Advanced types
+  formula
+  rollup
+  lookup
+  progress
+  rating
+  checkbox
+}
+
+enum ViewType {
+  kanban
+  list
+  table
+  calendar
+  timeline
+  gantt
+  gallery
+}
+
+enum TaskType {
+  epic
+  story
+  task
+  subtask
+  bug
+  milestone
+}
+
+enum LinkType {
+  blocks
+  blocked_by
+  relates_to
+  duplicates
+  cloned_from
+  parent_of
+}
+
 // Enums
 enum SubscriptionStatus {
   free
@@ -186,9 +257,9 @@ model Column {
 model Task {
   id          String       @id @default(cuid())
   title       String
-  description String?
-  column_id   String
-  position    Int
+  description String?      @db.Text
+  column_id   String?
+  position    Float        @default(0)
   priority    TaskPriority @default(medium)
   due_date    DateTime?
   is_done     Boolean      @default(false)
@@ -198,14 +269,31 @@ model Task {
   created_at  DateTime     @default(now())
   updated_at  DateTime     @updatedAt
 
+  // Phase 3: Enhanced fields
+  project_id   String?
+  parent_id    String?
+  task_type    TaskType     @default(task)
+  status_id    String?
+  archived_at  DateTime?
+  completed_at DateTime?
+
   // Relations
-  column             Column        @relation(fields: [column_id], references: [id], onDelete: Cascade)
+  column             Column?       @relation(fields: [column_id], references: [id], onDelete: Cascade)
   creator            Profile?      @relation("TaskCreator", fields: [created_by], references: [id])
   updater            Profile?      @relation("TaskUpdater", fields: [updated_by], references: [id])
   assignee           Profile?      @relation("TaskAssignee", fields: [assigned_to], references: [id])
   task_comments      TaskComment[]
   task_activity_logs ActivityLog[] @relation("TaskActivityLog")
 
+  // Phase 3: Subtask relations
+  parent   Task?  @relation("SubTasks", fields: [parent_id], references: [id], onDelete: Cascade)
+  subtasks Task[] @relation("SubTasks")
+
+  @@index([project_id])
+  @@index([parent_id])
+  @@index([task_type])
+  @@index([status_id])
+  @@index([archived_at])
   @@map("tasks")
 }
 
@@ -437,6 +525,213 @@ model Invitation {
   @@index([token])
   @@index([status])
   @@map("invitations")
+}
+
+// =============================================================================
+// PHASE 3: Custom Fields System
+// =============================================================================
+
+model FieldDefinition {
+  id           String    @id @default(cuid())
+  project_id   String
+  name         String    @db.VarChar(100)
+  slug         String    @db.VarChar(100)
+  type         FieldType
+  config       Json?
+  position     Int       @default(0)
+  is_required  Boolean   @default(false)
+  is_system    Boolean   @default(false)
+  description  String?   @db.VarChar(500)
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  // Relations
+  values  FieldValue[]
+  options FieldOption[]
+
+  @@unique([project_id, slug])
+  @@index([type])
+  @@index([is_system])
+  @@map("field_definitions")
+}
+
+model FieldOption {
+  id                  String   @id @default(cuid())
+  field_definition_id String
+  label               String   @db.VarChar(100)
+  value               String   @db.VarChar(100)
+  color               String?  @db.VarChar(20)
+  icon                String?  @db.VarChar(50)
+  position            Int      @default(0)
+  is_default          Boolean  @default(false)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  // Relations
+  field_definition FieldDefinition @relation(fields: [field_definition_id], references: [id], onDelete: Cascade)
+
+  @@unique([field_definition_id, value])
+  @@index([position])
+  @@map("field_options")
+}
+
+model FieldValue {
+  id                  String    @id @default(cuid())
+  task_id             String
+  field_definition_id String
+  
+  // Value storage (use different columns based on type)
+  text_value   String?   @db.Text
+  number_value Float?
+  date_value   DateTime?
+  json_value   Json?
+  
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  field_definition FieldDefinition @relation(fields: [field_definition_id], references: [id], onDelete: Cascade)
+
+  @@unique([task_id, field_definition_id])
+  @@index([field_definition_id])
+  @@map("field_values")
+}
+
+model FieldTemplate {
+  id          String   @id @default(cuid())
+  name        String   @db.VarChar(100)
+  slug        String   @unique @db.VarChar(100)
+  type        FieldType
+  config      Json?
+  position    Int      @default(0)
+  is_default  Boolean  @default(true)
+  description String?  @db.VarChar(500)
+  created_at  DateTime @default(now())
+
+  @@map("field_templates")
+}
+
+// =============================================================================
+// PHASE 3: View System
+// =============================================================================
+
+model View {
+  id          String   @id @default(cuid())
+  project_id  String
+  name        String   @db.VarChar(100)
+  type        ViewType
+  config      Json
+  is_default  Boolean  @default(false)
+  is_personal Boolean  @default(false)
+  is_locked   Boolean  @default(false)
+  created_by  String?
+  position    Int      @default(0)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@index([project_id])
+  @@index([type])
+  @@index([created_by])
+  @@map("views")
+}
+
+// =============================================================================
+// PHASE 3: Task Enhancements
+// =============================================================================
+
+model TaskLink {
+  id           String   @id @default(cuid())
+  from_task_id String
+  to_task_id   String
+  link_type    LinkType
+  created_by   String?
+  created_at   DateTime @default(now())
+
+  @@unique([from_task_id, to_task_id, link_type])
+  @@index([from_task_id])
+  @@index([to_task_id])
+  @@map("task_links")
+}
+
+model Attachment {
+  id               String   @id @default(cuid())
+  task_id          String
+  file_name        String   @db.VarChar(255)
+  file_url         String   @db.VarChar(1000)
+  file_size        BigInt
+  file_type        String   @db.VarChar(100)
+  thumbnail_url    String?  @db.VarChar(1000)
+  storage_provider String   @default("supabase") @db.VarChar(20)
+  storage_path     String?  @db.VarChar(500)
+  uploaded_by      String?
+  created_at       DateTime @default(now())
+
+  @@index([task_id])
+  @@index([file_type])
+  @@index([uploaded_by])
+  @@map("attachments")
+}
+
+model TaskWatcher {
+  id         String   @id @default(cuid())
+  task_id    String
+  user_id    String
+  created_at DateTime @default(now())
+
+  @@unique([task_id, user_id])
+  @@index([task_id])
+  @@index([user_id])
+  @@map("task_watchers")
+}
+
+model TimeEntry {
+  id          String    @id @default(cuid())
+  task_id     String
+  user_id     String
+  description String?   @db.VarChar(500)
+  started_at  DateTime
+  ended_at    DateTime?
+  duration    Int?
+  billable    Boolean   @default(false)
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  @@index([task_id])
+  @@index([user_id])
+  @@index([started_at])
+  @@map("time_entries")
+}
+
+model Label {
+  id          String   @id @default(cuid())
+  project_id  String
+  name        String   @db.VarChar(50)
+  color       String   @db.VarChar(20)
+  description String?  @db.VarChar(200)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  // Relations
+  task_labels TaskLabel[]
+
+  @@unique([project_id, name])
+  @@index([project_id])
+  @@map("labels")
+}
+
+model TaskLabel {
+  id         String   @id @default(cuid())
+  task_id    String
+  label_id   String
+  created_at DateTime @default(now())
+
+  // Relations
+  label Label @relation(fields: [label_id], references: [id], onDelete: Cascade)
+
+  @@unique([task_id, label_id])
+  @@index([task_id])
+  @@index([label_id])
+  @@map("task_labels")
 }
 
 // =============================================================================
