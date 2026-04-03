@@ -184,6 +184,9 @@ model Profile {
   locale   String @default("en") @db.VarChar(10)
   timezone String @default("UTC") @db.VarChar(50)
 
+  // Admin fields
+  is_admin Boolean @default(false)
+
   // Relations
   projects         Project[]
   project_members  ProjectMember[]

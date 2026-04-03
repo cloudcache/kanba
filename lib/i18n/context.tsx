@@ -52,8 +52,8 @@ export function I18nProvider({ children, initialLocale }: I18nProviderProps) {
       setLocaleState(newLocale);
       // Set cookie
       document.cookie = `${LOCALE_COOKIE_NAME}=${newLocale};path=/;max-age=31536000`;
-      // Optionally reload to apply locale changes
-      // window.location.reload();
+      // Reload to apply locale changes across all components
+      window.location.reload();
     }
   }, []);
 
