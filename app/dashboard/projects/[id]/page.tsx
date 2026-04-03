@@ -155,14 +155,26 @@ export default function ProjectPage() {
 
   const loadProject = async () => {
     try {
-      // Get project by slug
-      const { data: project, error: projectError } = await supabase
+      // Try to get project by slug first, then by id
+      let { data: project, error: projectError } = await supabase
         .from('projects')
         .select('*')
         .eq('slug', projectId)
         .single();
 
-      if (projectError) throw projectError;
+      // If not found by slug, try by id
+      if (projectError || !project) {
+        const { data: projectById, error: idError } = await supabase
+          .from('projects')
+          .select('*')
+          .eq('id', projectId)
+          .single();
+        
+        if (idError) throw idError;
+        project = projectById;
+      }
+
+      if (!project) throw new Error('Project not found');
       setProject(project);
 
       // Load project members

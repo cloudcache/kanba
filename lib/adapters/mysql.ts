@@ -1,25 +1,29 @@
 import { PrismaClient } from '@prisma/client';
-import type { Database } from '../supabase';
 
-// Initialize Prisma client singleton
+// Initialize Prisma client singleton for MySQL
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
+  prismaMysql: PrismaClient | undefined;
 };
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient();
+export const prisma = globalForPrisma.prismaMysql ?? new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.MYSQL_DATABASE_URL || process.env.DATABASE_URL,
+    },
+  },
+});
 
 if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
+  globalForPrisma.prismaMysql = prisma;
 }
 
-// Query builder class to mimic Supabase's query interface
-class PostgresQueryBuilder<T> {
+// Query builder class to mimic Supabase's query interface for MySQL
+class MysqlQueryBuilder<T> {
   private table: string;
   private whereConditions: Record<string, any> = {};
   private orderByConditions: Record<string, 'asc' | 'desc'>[] = [];
   private limitValue?: number;
   private offsetValue?: number;
-  private includeRelations: Record<string, any> = {};
 
   constructor(table: string) {
     this.table = table;
@@ -65,11 +69,6 @@ class PostgresQueryBuilder<T> {
     return this;
   }
 
-  ilike(column: string, value: string): this {
-    this.whereConditions[column] = { contains: value.replace(/%/g, ''), mode: 'insensitive' };
-    return this;
-  }
-
   is(column: string, value: null | boolean): this {
     this.whereConditions[column] = value;
     return this;
@@ -92,7 +91,6 @@ class PostgresQueryBuilder<T> {
   }
 
   select(columns?: string): this {
-    // Prisma handles select differently, we'll return all columns for now
     return this;
   }
 
@@ -112,37 +110,34 @@ class PostgresQueryBuilder<T> {
   async execute(single = false): Promise<{ data: T | T[] | null; error: any }> {
     try {
       const orderBy = this.orderByConditions.length > 0 ? this.orderByConditions : undefined;
-      const include = Object.keys(this.includeRelations).length > 0 ? this.includeRelations : undefined;
 
       let result;
       if (single) {
         result = await (prisma as any)[this.table].findFirst({
           where: this.whereConditions,
           orderBy,
-          include,
         });
         return { data: result, error: null };
       } else {
         result = await (prisma as any)[this.table].findMany({
           where: this.whereConditions,
           orderBy,
-          include,
           take: this.limitValue,
           skip: this.offsetValue,
         });
         return { data: result, error: null };
       }
     } catch (error) {
-      console.error('PostgreSQL query error:', error);
+      console.error('MySQL query error:', error);
       return { data: null, error };
     }
   }
 }
 
-// Table interface to match Supabase's from() pattern
+// Table interface
 function createTableInterface<T>(tableName: string) {
   return {
-    select: (columns?: string) => new PostgresQueryBuilder<T>(tableName),
+    select: (columns?: string) => new MysqlQueryBuilder<T>(tableName),
     
     insert: async (data: Partial<T> | Partial<T>[]) => {
       try {
@@ -155,13 +150,13 @@ function createTableInterface<T>(tableName: string) {
           return { data: result, error: null };
         }
       } catch (error) {
-        console.error('PostgreSQL insert error:', error);
+        console.error('MySQL insert error:', error);
         return { data: null, error };
       }
     },
 
     update: (data: Partial<T>) => {
-      const builder = new PostgresQueryBuilder<T>(tableName);
+      const builder = new MysqlQueryBuilder<T>(tableName);
       (builder as any)._updateData = data;
       (builder as any).execute = async function() {
         try {
@@ -171,7 +166,7 @@ function createTableInterface<T>(tableName: string) {
           });
           return { data: result, error: null };
         } catch (error) {
-          console.error('PostgreSQL update error:', error);
+          console.error('MySQL update error:', error);
           return { data: null, error };
         }
       };
@@ -179,7 +174,7 @@ function createTableInterface<T>(tableName: string) {
     },
 
     delete: () => {
-      const builder = new PostgresQueryBuilder<T>(tableName);
+      const builder = new MysqlQueryBuilder<T>(tableName);
       (builder as any).execute = async function() {
         try {
           const result = await (prisma as any)[tableName].deleteMany({
@@ -187,7 +182,7 @@ function createTableInterface<T>(tableName: string) {
           });
           return { data: result, error: null };
         } catch (error) {
-          console.error('PostgreSQL delete error:', error);
+          console.error('MySQL delete error:', error);
           return { data: null, error };
         }
       };
@@ -204,20 +199,19 @@ function createTableInterface<T>(tableName: string) {
         });
         return { data: result, error: null };
       } catch (error) {
-        console.error('PostgreSQL upsert error:', error);
+        console.error('MySQL upsert error:', error);
         return { data: null, error };
       }
     },
   };
 }
 
-// PostgreSQL adapter that mimics Supabase client interface
-export function createPostgresClient() {
+// MySQL adapter that mimics Supabase client interface
+export function createMysqlClient() {
   return {
     from: <T = any>(table: string) => createTableInterface<T>(table),
     
     auth: {
-      // PostgreSQL doesn't have built-in auth, these are stubs
       getUser: async () => ({ data: { user: null }, error: null }),
       getSession: async () => ({ data: { session: null }, error: null }),
       signInWithPassword: async () => ({ data: null, error: new Error('Use external auth provider') }),
@@ -225,63 +219,8 @@ export function createPostgresClient() {
       signOut: async () => ({ error: null }),
     },
 
-    // Direct Prisma access for complex queries
     prisma,
   };
 }
 
-// Helper functions for common operations
-export const postgresHelpers = {
-  async getProjectWithDetails(projectId: string) {
-    try {
-      const project = await prisma.project.findUnique({
-        where: { id: projectId },
-        include: {
-          columns: {
-            include: {
-              tasks: {
-                orderBy: { position: 'asc' },
-              },
-            },
-            orderBy: { position: 'asc' },
-          },
-        },
-      });
-      return { data: project, error: null };
-    } catch (error) {
-      return { data: null, error };
-    }
-  },
-
-  async getUserProjects(userId: string) {
-    try {
-      const projects = await prisma.project.findMany({
-        where: {
-          OR: [
-            { user_id: userId },
-            { project_members: { some: { user_id: userId } } },
-          ],
-        },
-        orderBy: { created_at: 'desc' },
-      });
-      return { data: projects, error: null };
-    } catch (error) {
-      return { data: null, error };
-    }
-  },
-
-  async getAssignedTasks(userId: string, limit = 10) {
-    try {
-      const tasks = await prisma.task.findMany({
-        where: { assigned_to: userId },
-        orderBy: { created_at: 'desc' },
-        take: limit,
-      });
-      return { data: tasks, error: null };
-    } catch (error) {
-      return { data: null, error };
-    }
-  },
-};
-
-export type PostgresClient = ReturnType<typeof createPostgresClient>;
+export type MysqlClient = ReturnType<typeof createMysqlClient>;
