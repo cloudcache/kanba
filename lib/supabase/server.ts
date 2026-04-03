@@ -1,5 +1,13 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
+
+/**
+ * Alias for createServerSupabaseClientWithAuth for convenience
+ * Used by API routes that import { createClient } from '@/lib/supabase/server'
+ */
+export async function createClient() {
+  return createServerSupabaseClientWithAuth();
+}
 
 /**
  * Create a Supabase client for server-side operations
@@ -13,7 +21,7 @@ export async function createServerSupabaseClient() {
     throw new Error('Missing Supabase environment variables');
   }
   
-  return createClient(supabaseUrl, supabaseServiceKey, {
+  return createSupabaseClient(supabaseUrl, supabaseServiceKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -35,7 +43,7 @@ export async function createServerSupabaseClientWithAuth() {
   
   const cookieStore = await cookies();
   
-  return createClient(supabaseUrl, supabaseAnonKey, {
+  return createSupabaseClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
