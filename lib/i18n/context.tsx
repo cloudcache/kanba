@@ -101,6 +101,6 @@ export function useI18n() {
  * Hook to get translation function
  */
 export function useTranslation() {
-  const { t, locale } = useI18n();
-  return { t, locale };
+  const { t, locale, setLocale } = useI18n();
+  return { t, locale, setLocale };
 }

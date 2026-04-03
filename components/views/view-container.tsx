@@ -10,7 +10,7 @@ import { ViewSwitcher } from './view-switcher';
 import { ViewToolbar } from './view-toolbar';
 import { applyFilters, applySorts } from './utils';
 import type { Task, Column, ProjectMember } from '@/lib/types';
-import type { View, ViewType, ViewConfig, SortConfig, FilterGroup } from '@/lib/views/types';
+import type { View, ViewType, SortConfig, FilterGroup } from '@/lib/views/types';
 import { DropResult } from '@hello-pangea/dnd';
 
 interface ViewContainerProps {
