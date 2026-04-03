@@ -1,9 +1,21 @@
 import { createClient } from '@supabase/supabase-js';
+import { PrismaClient } from '@prisma/client';
 import type { Database } from './supabase';
 
 // Environment configuration
 const DATABASE_PROVIDER = process.env.DATABASE_PROVIDER || 'supabase';
 const USE_POSTGRES = DATABASE_PROVIDER === 'postgresql';
+
+// Prisma client singleton
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+};
+
+export const prisma = globalForPrisma.prisma ?? new PrismaClient();
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
+}
 
 // Supabase client (default)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
