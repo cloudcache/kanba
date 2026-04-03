@@ -5,7 +5,6 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  Check,
   Flag,
   Calendar,
   User,
@@ -13,12 +12,10 @@ import {
   Edit,
   Trash2,
   Plus,
-  GripVertical,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
   DropdownMenuContent,
