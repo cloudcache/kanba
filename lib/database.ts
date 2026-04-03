@@ -1,88 +1,313 @@
-import { createClient } from '@supabase/supabase-js';
+/**
+ * Unified Database Module
+ * 
+ * Supports multiple database backends:
+ * - Supabase (default)
+ * - PostgreSQL (via Prisma)
+ * - MySQL (via Prisma)
+ * 
+ * Set DATABASE_PROVIDER env var to: "supabase" | "postgresql" | "mysql"
+ */
+
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { PrismaClient } from '@prisma/client';
 import type { Database } from './supabase';
 
-// Environment configuration
-const DATABASE_PROVIDER = process.env.DATABASE_PROVIDER || 'supabase';
-const USE_POSTGRES = DATABASE_PROVIDER === 'postgresql';
+// ============================================
+// Database Provider Configuration
+// ============================================
 
-// Prisma client singleton
+export type DatabaseProvider = 'supabase' | 'postgresql' | 'mysql';
+
+const DATABASE_PROVIDER = (process.env.DATABASE_PROVIDER || 'supabase').toLowerCase() as DatabaseProvider;
+
+export const databaseConfig = {
+  provider: DATABASE_PROVIDER,
+  isSupabase: DATABASE_PROVIDER === 'supabase',
+  isPostgres: DATABASE_PROVIDER === 'postgresql' || DATABASE_PROVIDER === 'postgres',
+  isMysql: DATABASE_PROVIDER === 'mysql' || DATABASE_PROVIDER === 'mariadb',
+};
+
+// ============================================
+// Prisma Client (for PostgreSQL/MySQL)
+// ============================================
+
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient();
+export const prisma = globalForPrisma.prisma ?? new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL,
+    },
+  },
+});
 
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
 
-// Supabase client (default)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
- 
-// PostgreSQL adapter (optional)
-let postgresAdapter: any = null;
-let postgresHelpers: any = null;
+// ============================================
+// Supabase Client
+// ============================================
 
-if (USE_POSTGRES) {
-  try {
-    const postgresModule = require('./adapters/postgres');
-    postgresAdapter = postgresModule.postgresAdapter;
-    postgresHelpers = postgresModule.postgresHelpers;
-  } catch (error) {
-    console.warn('PostgreSQL adapter not available, falling back to Supabase:', error);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+export const supabase: SupabaseClient<Database> = createClient<Database>(
+  supabaseUrl, 
+  supabaseAnonKey
+);
+
+// ============================================
+// Unified Database Interface
+// ============================================
+
+export interface QueryBuilder<T> {
+  eq(column: string, value: any): QueryBuilder<T>;
+  neq(column: string, value: any): QueryBuilder<T>;
+  gt(column: string, value: any): QueryBuilder<T>;
+  gte(column: string, value: any): QueryBuilder<T>;
+  lt(column: string, value: any): QueryBuilder<T>;
+  lte(column: string, value: any): QueryBuilder<T>;
+  in(column: string, values: any[]): QueryBuilder<T>;
+  like(column: string, value: string): QueryBuilder<T>;
+  ilike(column: string, value: string): QueryBuilder<T>;
+  is(column: string, value: null | boolean): QueryBuilder<T>;
+  order(column: string, options?: { ascending?: boolean }): QueryBuilder<T>;
+  limit(count: number): QueryBuilder<T>;
+  range(from: number, to: number): QueryBuilder<T>;
+  single(): Promise<{ data: T | null; error: any }>;
+  maybeSingle(): Promise<{ data: T | null; error: any }>;
+  then(resolve: (value: { data: T[] | null; error: any }) => void): Promise<void>;
+}
+
+// ============================================
+// Prisma Query Builder (PostgreSQL/MySQL)
+// ============================================
+
+class PrismaQueryBuilder<T> implements QueryBuilder<T> {
+  private tableName: string;
+  private whereConditions: Record<string, any> = {};
+  private orderByConditions: Record<string, 'asc' | 'desc'>[] = [];
+  private limitValue?: number;
+  private offsetValue?: number;
+
+  constructor(tableName: string) {
+    this.tableName = tableName;
+  }
+
+  eq(column: string, value: any): this {
+    this.whereConditions[column] = value;
+    return this;
+  }
+
+  neq(column: string, value: any): this {
+    this.whereConditions[column] = { not: value };
+    return this;
+  }
+
+  gt(column: string, value: any): this {
+    this.whereConditions[column] = { gt: value };
+    return this;
+  }
+
+  gte(column: string, value: any): this {
+    this.whereConditions[column] = { gte: value };
+    return this;
+  }
+
+  lt(column: string, value: any): this {
+    this.whereConditions[column] = { lt: value };
+    return this;
+  }
+
+  lte(column: string, value: any): this {
+    this.whereConditions[column] = { lte: value };
+    return this;
+  }
+
+  in(column: string, values: any[]): this {
+    this.whereConditions[column] = { in: values };
+    return this;
+  }
+
+  like(column: string, value: string): this {
+    this.whereConditions[column] = { contains: value.replace(/%/g, '') };
+    return this;
+  }
+
+  ilike(column: string, value: string): this {
+    this.whereConditions[column] = { contains: value.replace(/%/g, ''), mode: 'insensitive' };
+    return this;
+  }
+
+  is(column: string, value: null | boolean): this {
+    this.whereConditions[column] = value;
+    return this;
+  }
+
+  order(column: string, options?: { ascending?: boolean }): this {
+    this.orderByConditions.push({ [column]: options?.ascending === false ? 'desc' : 'asc' });
+    return this;
+  }
+
+  limit(count: number): this {
+    this.limitValue = count;
+    return this;
+  }
+
+  range(from: number, to: number): this {
+    this.offsetValue = from;
+    this.limitValue = to - from + 1;
+    return this;
+  }
+
+  async single(): Promise<{ data: T | null; error: any }> {
+    try {
+      const orderBy = this.orderByConditions.length > 0 ? this.orderByConditions : undefined;
+      const result = await (prisma as any)[this.tableName].findFirst({
+        where: this.whereConditions,
+        orderBy,
+      });
+      return { data: result, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
+  }
+
+  async maybeSingle(): Promise<{ data: T | null; error: any }> {
+    return this.single();
+  }
+
+  async then(resolve: (value: { data: T[] | null; error: any }) => void): Promise<void> {
+    try {
+      const orderBy = this.orderByConditions.length > 0 ? this.orderByConditions : undefined;
+      const result = await (prisma as any)[this.tableName].findMany({
+        where: this.whereConditions,
+        orderBy,
+        take: this.limitValue,
+        skip: this.offsetValue,
+      });
+      resolve({ data: result, error: null });
+    } catch (error) {
+      resolve({ data: null, error });
+    }
   }
 }
 
-// Database interface that matches Supabase's structure
-export interface DatabaseAdapter {
-  profiles: {
-    select: (columns?: string) => any;
-    insert: (data: any) => Promise<{ data: any; error: any }>;
-    update: (data: any) => Promise<{ data: any; error: any }>;
-    delete: () => Promise<{ data: any; error: any }>;
-  };
-  projects: {
-    select: (columns?: string) => any;
-    insert: (data: any) => Promise<{ data: any; error: any }>;
-    update: (data: any) => Promise<{ data: any; error: any }>;
-    delete: () => Promise<{ data: any; error: any }>;
-  };
-  columns: {
-    select: (columns?: string) => any;
-    insert: (data: any) => Promise<{ data: any; error: any }>;
-    update: (data: any) => Promise<{ data: any; error: any }>;
-    delete: () => Promise<{ data: any; error: any }>;
-  };
-  tasks: {
-    select: (columns?: string) => any;
-    insert: (data: any) => Promise<{ data: any; error: any }>;
-    update: (data: any) => Promise<{ data: any; error: any }>;
-    delete: () => Promise<{ data: any; error: any }>;
+// ============================================
+// Unified Database Client
+// ============================================
+
+function createPrismaTableInterface(tableName: string) {
+  return {
+    select: (columns?: string) => new PrismaQueryBuilder(tableName),
+    
+    insert: async (data: any | any[]) => {
+      try {
+        const dataArray = Array.isArray(data) ? data : [data];
+        if (dataArray.length === 1) {
+          const result = await (prisma as any)[tableName].create({ data: dataArray[0] });
+          return { data: result, error: null };
+        } else {
+          const result = await (prisma as any)[tableName].createMany({ data: dataArray });
+          return { data: result, error: null };
+        }
+      } catch (error) {
+        return { data: null, error };
+      }
+    },
+
+    update: (data: any) => {
+      const builder = new PrismaQueryBuilder(tableName);
+      (builder as any)._updateData = data;
+      const originalSingle = builder.single.bind(builder);
+      builder.single = async () => {
+        try {
+          const result = await (prisma as any)[tableName].updateMany({
+            where: (builder as any).whereConditions,
+            data: (builder as any)._updateData,
+          });
+          return { data: result, error: null };
+        } catch (error) {
+          return { data: null, error };
+        }
+      };
+      return builder;
+    },
+
+    delete: () => {
+      const builder = new PrismaQueryBuilder(tableName);
+      const originalSingle = builder.single.bind(builder);
+      builder.single = async () => {
+        try {
+          const result = await (prisma as any)[tableName].deleteMany({
+            where: (builder as any).whereConditions,
+          });
+          return { data: result, error: null };
+        } catch (error) {
+          return { data: null, error };
+        }
+      };
+      return builder;
+    },
+
+    upsert: async (data: any, options?: { onConflict?: string }) => {
+      try {
+        const conflictField = options?.onConflict || 'id';
+        const result = await (prisma as any)[tableName].upsert({
+          where: { [conflictField]: data[conflictField] },
+          update: data,
+          create: data,
+        });
+        return { data: result, error: null };
+      } catch (error) {
+        return { data: null, error };
+      }
+    },
   };
 }
 
-// Helper functions interface
-export interface DatabaseHelpers {
-  getProjectWithDetails: (projectId: string) => Promise<{ data: any; error: any }>;
-  getUserProjects: (userId: string) => Promise<{ data: any; error: any }>;
-  getAssignedTasks: (userId: string, limit?: number) => Promise<{ data: any; error: any }>;
-  searchUsers: (query: string, currentUserId: string, limit?: number) => Promise<{ data: any; error: any }>;
+// Prisma-based client
+const prismaClient = {
+  from: (table: string) => createPrismaTableInterface(table),
+  auth: {
+    getUser: async () => ({ data: { user: null }, error: null }),
+    getSession: async () => ({ data: { session: null }, error: null }),
+    signInWithPassword: async () => ({ data: null, error: new Error('Use external auth for PostgreSQL/MySQL') }),
+    signUp: async () => ({ data: null, error: new Error('Use external auth for PostgreSQL/MySQL') }),
+    signOut: async () => ({ error: null }),
+  },
+};
+
+// ============================================
+// Exports
+// ============================================
+
+// Get the appropriate database client based on provider
+export function getDatabase() {
+  if (databaseConfig.isPostgres || databaseConfig.isMysql) {
+    return prismaClient;
+  }
+  return supabase;
 }
 
-// Supabase helpers implementation
-const supabaseHelpers: DatabaseHelpers = {
+// Unified db export - use this in most cases
+export const db = databaseConfig.isSupabase ? supabase : prismaClient;
+
+// Helper functions
+export const dbHelpers = {
   async getProjectWithDetails(projectId: string) {
-    try {
+    if (databaseConfig.isSupabase) {
       const { data: project, error: projectError } = await supabase
         .from('projects')
         .select('*')
         .eq('id', projectId)
         .single();
 
-      if (projectError) throw projectError;
+      if (projectError) return { data: null, error: projectError };
 
       const { data: columns, error: columnsError } = await supabase
         .from('columns')
@@ -90,118 +315,86 @@ const supabaseHelpers: DatabaseHelpers = {
         .eq('project_id', projectId)
         .order('position');
 
-      if (columnsError) throw columnsError;
+      if (columnsError) return { data: null, error: columnsError };
 
       const columnsWithTasks = await Promise.all(
-        columns.map(async (column) => {
-          const { data: tasks, error: tasksError } = await supabase
+        (columns || []).map(async (column) => {
+          const { data: tasks } = await supabase
             .from('tasks')
-            .select(`
-              *,
-              profiles:assigned_to (
-                id,
-                email,
-                full_name,
-                avatar_url
-              )
-            `)
+            .select('*')
             .eq('column_id', column.id)
             .order('position');
-
-          if (tasksError) throw tasksError;
-
-          return {
-            ...column,
-            tasks: tasks || [],
-          };
+          return { ...column, tasks: tasks || [] };
         })
       );
 
-      return {
-        data: {
-          ...project,
-          columns: columnsWithTasks,
-        },
-        error: null,
-      };
-    } catch (error) {
-      return { data: null, error };
+      return { data: { ...project, columns: columnsWithTasks }, error: null };
+    } else {
+      try {
+        const project = await prisma.project.findUnique({
+          where: { id: projectId },
+          include: {
+            columns: {
+              include: { tasks: { orderBy: { position: 'asc' } } },
+              orderBy: { position: 'asc' },
+            },
+          },
+        });
+        return { data: project, error: null };
+      } catch (error) {
+        return { data: null, error };
+      }
     }
   },
 
   async getUserProjects(userId: string) {
-    try {
-      const { data: projects, error } = await supabase
+    if (databaseConfig.isSupabase) {
+      return supabase
         .from('projects')
-        .select(`
-          *,
-          project_members!inner(role)
-        `)
+        .select('*')
+        .eq('user_id', userId)
         .order('created_at', { ascending: false });
-
-      return { data: projects, error };
-    } catch (error) {
-      return { data: null, error };
+    } else {
+      try {
+        const projects = await prisma.project.findMany({
+          where: { user_id: userId },
+          orderBy: { created_at: 'desc' },
+        });
+        return { data: projects, error: null };
+      } catch (error) {
+        return { data: null, error };
+      }
     }
   },
 
   async getAssignedTasks(userId: string, limit = 10) {
-    try {
-      const { data: tasks, error } = await supabase
+    if (databaseConfig.isSupabase) {
+      return supabase
         .from('tasks')
-        .select(`
-          id,
-          title,
-          priority,
-          due_date,
-          column_id
-        `)
+        .select('*')
         .eq('assigned_to', userId)
         .order('created_at', { ascending: false })
         .limit(limit);
-
-      return { data: tasks, error };
-    } catch (error) {
-      return { data: null, error };
-    }
-  },
-
-  async searchUsers(query: string, currentUserId: string, limit = 10) {
-    try {
-      const { data: users, error } = await supabase
-        .from('user_search')
-        .select('id, email, full_name, avatar_url')
-        .or(`email.ilike.%${query}%,full_name.ilike.%${query}%`)
-        .neq('id', currentUserId)
-        .limit(limit);
-
-      return { data: users, error };
-    } catch (error) {
-      return { data: null, error };
+    } else {
+      try {
+        const tasks = await prisma.task.findMany({
+          where: { assigned_to: userId },
+          orderBy: { created_at: 'desc' },
+          take: limit,
+        });
+        return { data: tasks, error: null };
+      } catch (error) {
+        return { data: null, error };
+      }
     }
   },
 };
 
-// Export the appropriate database adapter and helpers
-export const db: DatabaseAdapter = USE_POSTGRES && postgresAdapter ? postgresAdapter : supabase;
-export const dbHelpers: DatabaseHelpers = USE_POSTGRES && postgresHelpers ? postgresHelpers : supabaseHelpers;
+// Utility exports
+export const getDatabaseProvider = () => DATABASE_PROVIDER;
+export const isPostgresAvailable = () => databaseConfig.isPostgres;
+export const isMysqlAvailable = () => databaseConfig.isMysql;
+export const isSupabaseAvailable = () => databaseConfig.isSupabase;
 
-// Export database provider info
-export const databaseConfig = {
-  provider: DATABASE_PROVIDER,
-  isPostgres: USE_POSTGRES,
-  isSupabase: !USE_POSTGRES,
-};
-
-// Utility function to check if PostgreSQL is available
-export const isPostgresAvailable = () => {
-  return USE_POSTGRES && postgresAdapter !== null;
-};
-
-// Utility function to get current database provider
-export const getDatabaseProvider = () => {
-  return DATABASE_PROVIDER;
-};
-
-// Export types for compatibility
-export type { Database }; 
+// Type exports
+export type { Database };
