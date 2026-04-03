@@ -622,10 +622,20 @@ async function runAllTests() {
   });
 
   await runTest('RLS', '匿名用户无法删除项目', async () => {
-    const { status } = await supabaseAnon(`projects?id=eq.${testData.projectId}`, {
+    // 先获取项目数量
+    const { data: before } = await supabaseAdmin(`projects?id=eq.${testData.projectId}&select=id`);
+    const countBefore = before?.length || 0;
+    
+    // 尝试匿名删除
+    await supabaseAnon(`projects?id=eq.${testData.projectId}`, {
       method: 'DELETE'
     });
-    if (status < 400) throw new Error('RLS 未阻止匿名删除项目');
+    
+    // 验证项目仍然存在（RLS 阻止了删除）
+    const { data: after } = await supabaseAdmin(`projects?id=eq.${testData.projectId}&select=id`);
+    const countAfter = after?.length || 0;
+    
+    if (countAfter < countBefore) throw new Error('RLS 未阻止匿名删除项目');
   });
 
   // ==================== 13. 清理测试数据 ====================
