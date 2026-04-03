@@ -411,5 +411,88 @@ INSERT INTO profiles (id, email, password_hash, full_name, is_admin, email_verif
   (UUID(), 'admin@kanba.local', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.Q.1z.lKT0lK0Vu', 'System Admin', TRUE, TRUE);
 
 -- ============================================
+-- ORGANIZATION TABLES
+-- ============================================
+
+-- Organizations
+CREATE TABLE IF NOT EXISTS organizations (
+  id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(255) UNIQUE NOT NULL,
+  description TEXT,
+  logo_url TEXT,
+  owner_id CHAR(36),
+  settings JSON DEFAULT '{}',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (owner_id) REFERENCES profiles(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Roles
+CREATE TABLE IF NOT EXISTS roles (
+  id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  organization_id CHAR(36),
+  name VARCHAR(100) NOT NULL,
+  description TEXT,
+  permissions JSON DEFAULT '[]',
+  is_default BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Organization Members
+CREATE TABLE IF NOT EXISTS organization_members (
+  id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  organization_id CHAR(36),
+  user_id CHAR(36),
+  role_id CHAR(36),
+  joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_org_user (organization_id, user_id),
+  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE,
+  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Invitations
+CREATE TABLE IF NOT EXISTS invitations (
+  id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  organization_id CHAR(36),
+  email VARCHAR(255) NOT NULL,
+  role_id CHAR(36),
+  token VARCHAR(255) UNIQUE NOT NULL,
+  invited_by CHAR(36),
+  status ENUM('pending', 'accepted', 'expired', 'cancelled') DEFAULT 'pending',
+  expires_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE SET NULL,
+  FOREIGN KEY (invited_by) REFERENCES profiles(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Workspaces
+CREATE TABLE IF NOT EXISTS workspaces (
+  id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  organization_id CHAR(36),
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  settings JSON DEFAULT '{}',
+  created_by CHAR(36),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+  FOREIGN KEY (created_by) REFERENCES profiles(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Indexes for organization tables
+CREATE INDEX idx_org_members_org ON organization_members(organization_id);
+CREATE INDEX idx_org_members_user ON organization_members(user_id);
+CREATE INDEX idx_invitations_token ON invitations(token);
+CREATE INDEX idx_invitations_email ON invitations(email);
+CREATE INDEX idx_workspaces_org ON workspaces(organization_id);
+CREATE INDEX idx_organizations_owner ON organizations(owner_id);
+CREATE INDEX idx_organizations_slug ON organizations(slug);
+
+-- ============================================
 -- END OF INITIALIZATION
 -- ============================================

@@ -422,5 +422,78 @@ INSERT INTO profiles (email, password_hash, full_name, is_admin, email_verified)
 ON CONFLICT (email) DO NOTHING;
 
 -- ============================================
+-- ORGANIZATION TABLES
+-- ============================================
+
+-- Organizations
+CREATE TABLE IF NOT EXISTS organizations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(255) UNIQUE NOT NULL,
+  description TEXT,
+  logo_url TEXT,
+  owner_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  settings JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Roles
+CREATE TABLE IF NOT EXISTS roles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  name VARCHAR(100) NOT NULL,
+  description TEXT,
+  permissions JSONB DEFAULT '[]',
+  is_default BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Organization Members
+CREATE TABLE IF NOT EXISTS organization_members (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  role_id UUID REFERENCES roles(id) ON DELETE SET NULL,
+  joined_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(organization_id, user_id)
+);
+
+-- Invitations
+CREATE TABLE IF NOT EXISTS invitations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  email VARCHAR(255) NOT NULL,
+  role_id UUID REFERENCES roles(id) ON DELETE SET NULL,
+  token VARCHAR(255) UNIQUE NOT NULL,
+  invited_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'expired', 'cancelled')),
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Workspaces
+CREATE TABLE IF NOT EXISTS workspaces (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  settings JSONB DEFAULT '{}',
+  created_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for organization tables
+CREATE INDEX IF NOT EXISTS idx_org_members_org ON organization_members(organization_id);
+CREATE INDEX IF NOT EXISTS idx_org_members_user ON organization_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_invitations_token ON invitations(token);
+CREATE INDEX IF NOT EXISTS idx_invitations_email ON invitations(email);
+CREATE INDEX IF NOT EXISTS idx_workspaces_org ON workspaces(organization_id);
+CREATE INDEX IF NOT EXISTS idx_organizations_owner ON organizations(owner_id);
+CREATE INDEX IF NOT EXISTS idx_organizations_slug ON organizations(slug);
+
+-- ============================================
 -- END OF INITIALIZATION
 -- ============================================
