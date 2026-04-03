@@ -1,10 +1,11 @@
 /**
  * Organization Service
  * Phase 2: Organization & Workspace Management
+ * 
+ * Supports both Supabase and Prisma backends
  */
 
-import { getDatabase } from '@/lib/database';
-import { PRESET_ROLES } from '@/lib/permissions';
+import { createClient } from '@/lib/supabase/server';
 import crypto from 'crypto';
 
 // =============================================================================
@@ -79,7 +80,7 @@ export function getInvitationExpiry(): Date {
 }
 
 // =============================================================================
-// Organization CRUD Operations
+// Organization CRUD Operations (Supabase Implementation)
 // =============================================================================
 
 /**
@@ -87,102 +88,82 @@ export function getInvitationExpiry(): Date {
  */
 export async function createOrganization(
   input: CreateOrganizationInput
-): Promise<{ organization: OrganizationWithMembers; error?: string }> {
-  const db = getDatabase();
-
+): Promise<{ organization: OrganizationWithMembers | null; error?: string }> {
   try {
-    // Generate slug if not provided
+    const supabase = await createClient();
     const slug = input.slug || generateSlug(input.name);
 
     // Check if slug is unique
-    const existing = await db.organization.findUnique({
-      where: { slug },
-    });
+    const { data: existing } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('slug', slug)
+      .single();
 
     if (existing) {
-      return {
-        organization: null as unknown as OrganizationWithMembers,
-        error: 'Organization slug already exists',
-      };
+      return { organization: null, error: 'Organization slug already exists' };
     }
 
-    // Create organization with owner role and membership in a transaction
-    const result = await db.$transaction(async (tx) => {
-      // Create organization
-      const org = await tx.organization.create({
-        data: {
-          name: input.name,
-          slug,
-          description: input.description,
-          logo_url: input.logoUrl,
-        },
+    // Create organization
+    const { data: org, error: orgError } = await supabase
+      .from('organizations')
+      .insert({
+        name: input.name,
+        slug,
+        description: input.description,
+        logo_url: input.logoUrl,
+      })
+      .select()
+      .single();
+
+    if (orgError) throw orgError;
+
+    // Create owner role
+    const { data: ownerRole, error: roleError } = await supabase
+      .from('roles')
+      .insert({
+        organization_id: org.id,
+        name: 'Owner',
+        slug: 'owner',
+        description: 'Full access to all organization resources',
+        permissions: ['*'],
+        is_system: true,
+        hierarchy_level: 100,
+      })
+      .select()
+      .single();
+
+    if (roleError) throw roleError;
+
+    // Add creator as owner
+    const { error: memberError } = await supabase
+      .from('organization_members')
+      .insert({
+        organization_id: org.id,
+        user_id: input.creatorId,
+        role_id: ownerRole.id,
+        status: 'active',
       });
 
-      // Create owner role
-      const ownerRole = await tx.role.create({
-        data: {
-          organization_id: org.id,
-          name: PRESET_ROLES.org_owner.name,
-          slug: PRESET_ROLES.org_owner.slug,
-          description: PRESET_ROLES.org_owner.description,
-          permissions: PRESET_ROLES.org_owner.permissions as string[],
-          is_system: true,
-          hierarchy_level: PRESET_ROLES.org_owner.hierarchyLevel,
-        },
-      });
-
-      // Create other preset roles
-      const rolePromises = Object.entries(PRESET_ROLES)
-        .filter(([key]) => key !== 'org_owner')
-        .map(([, role]) =>
-          tx.role.create({
-            data: {
-              organization_id: org.id,
-              name: role.name,
-              slug: role.slug,
-              description: role.description,
-              permissions: role.permissions as string[],
-              is_system: true,
-              hierarchy_level: role.hierarchyLevel,
-            },
-          })
-        );
-
-      await Promise.all(rolePromises);
-
-      // Add creator as owner
-      await tx.organizationMember.create({
-        data: {
-          organization_id: org.id,
-          user_id: input.creatorId,
-          role_id: ownerRole.id,
-          status: 'active',
-        },
-      });
-
-      return org;
-    });
+    if (memberError) throw memberError;
 
     return {
       organization: {
-        id: result.id,
-        name: result.name,
-        slug: result.slug,
-        logoUrl: result.logo_url,
-        description: result.description,
-        billingPlan: result.billing_plan,
-        settings: result.settings as Record<string, unknown> | null,
-        createdAt: result.created_at,
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        logoUrl: org.logo_url,
+        description: org.description,
+        billingPlan: org.billing_plan || 'free',
+        settings: org.settings,
+        createdAt: new Date(org.created_at),
         memberCount: 1,
         workspaceCount: 0,
       },
     };
   } catch (error) {
     console.error('Failed to create organization:', error);
-    return {
-      organization: null as unknown as OrganizationWithMembers,
-      error: 'Failed to create organization',
-    };
+    return { organization: null, error: 'Failed to create organization' };
   }
 }
 
@@ -192,34 +173,44 @@ export async function createOrganization(
 export async function getOrganization(
   id: string
 ): Promise<OrganizationWithMembers | null> {
-  const db = getDatabase();
+  try {
+    const supabase = await createClient();
+    
+    const { data: org, error } = await supabase
+      .from('organizations')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-  const org = await db.organization.findUnique({
-    where: { id },
-    include: {
-      _count: {
-        select: {
-          members: true,
-          workspaces: true,
-        },
-      },
-    },
-  });
+    if (error || !org) return null;
 
-  if (!org) return null;
+    // Get counts
+    const { count: memberCount } = await supabase
+      .from('organization_members')
+      .select('*', { count: 'exact', head: true })
+      .eq('organization_id', id);
 
-  return {
-    id: org.id,
-    name: org.name,
-    slug: org.slug,
-    logoUrl: org.logo_url,
-    description: org.description,
-    billingPlan: org.billing_plan,
-    settings: org.settings as Record<string, unknown> | null,
-    createdAt: org.created_at,
-    memberCount: org._count.members,
-    workspaceCount: org._count.workspaces,
-  };
+    const { count: workspaceCount } = await supabase
+      .from('workspaces')
+      .select('*', { count: 'exact', head: true })
+      .eq('organization_id', id);
+
+    return {
+      id: org.id,
+      name: org.name,
+      slug: org.slug,
+      logoUrl: org.logo_url,
+      description: org.description,
+      billingPlan: org.billing_plan || 'free',
+      settings: org.settings,
+      createdAt: new Date(org.created_at),
+      memberCount: memberCount || 0,
+      workspaceCount: workspaceCount || 0,
+    };
+  } catch (error) {
+    console.error('Failed to get organization:', error);
+    return null;
+  }
 }
 
 /**
@@ -228,34 +219,22 @@ export async function getOrganization(
 export async function getOrganizationBySlug(
   slug: string
 ): Promise<OrganizationWithMembers | null> {
-  const db = getDatabase();
+  try {
+    const supabase = await createClient();
+    
+    const { data: org, error } = await supabase
+      .from('organizations')
+      .select('*')
+      .eq('slug', slug)
+      .single();
 
-  const org = await db.organization.findUnique({
-    where: { slug },
-    include: {
-      _count: {
-        select: {
-          members: true,
-          workspaces: true,
-        },
-      },
-    },
-  });
+    if (error || !org) return null;
 
-  if (!org) return null;
-
-  return {
-    id: org.id,
-    name: org.name,
-    slug: org.slug,
-    logoUrl: org.logo_url,
-    description: org.description,
-    billingPlan: org.billing_plan,
-    settings: org.settings as Record<string, unknown> | null,
-    createdAt: org.created_at,
-    memberCount: org._count.members,
-    workspaceCount: org._count.workspaces,
-  };
+    return getOrganization(org.id);
+  } catch (error) {
+    console.error('Failed to get organization by slug:', error);
+    return null;
+  }
 }
 
 /**
@@ -264,42 +243,31 @@ export async function getOrganizationBySlug(
 export async function getUserOrganizations(
   userId: string
 ): Promise<OrganizationWithMembers[]> {
-  const db = getDatabase();
+  try {
+    const supabase = await createClient();
+    
+    const { data: memberships, error } = await supabase
+      .from('organization_members')
+      .select(`
+        organization_id,
+        organizations (*)
+      `)
+      .eq('user_id', userId)
+      .eq('status', 'active');
 
-  const memberships = await db.organizationMember.findMany({
-    where: {
-      user_id: userId,
-      status: 'active',
-    },
-    include: {
-      organization: {
-        include: {
-          _count: {
-            select: {
-              members: true,
-              workspaces: true,
-            },
-          },
-        },
-      },
-    },
-    orderBy: {
-      joined_at: 'desc',
-    },
-  });
+    if (error || !memberships) return [];
 
-  return memberships.map((m) => ({
-    id: m.organization.id,
-    name: m.organization.name,
-    slug: m.organization.slug,
-    logoUrl: m.organization.logo_url,
-    description: m.organization.description,
-    billingPlan: m.organization.billing_plan,
-    settings: m.organization.settings as Record<string, unknown> | null,
-    createdAt: m.organization.created_at,
-    memberCount: m.organization._count.members,
-    workspaceCount: m.organization._count.workspaces,
-  }));
+    const orgs: OrganizationWithMembers[] = [];
+    for (const m of memberships) {
+      const org = await getOrganization(m.organization_id);
+      if (org) orgs.push(org);
+    }
+
+    return orgs;
+  } catch (error) {
+    console.error('Failed to get user organizations:', error);
+    return [];
+  }
 }
 
 /**
@@ -309,19 +277,20 @@ export async function updateOrganization(
   id: string,
   input: UpdateOrganizationInput
 ): Promise<{ success: boolean; error?: string }> {
-  const db = getDatabase();
-
   try {
-    await db.organization.update({
-      where: { id },
-      data: {
+    const supabase = await createClient();
+    
+    const { error } = await supabase
+      .from('organizations')
+      .update({
         name: input.name,
         description: input.description,
         logo_url: input.logoUrl,
         settings: input.settings,
-      },
-    });
+      })
+      .eq('id', id);
 
+    if (error) throw error;
     return { success: true };
   } catch (error) {
     console.error('Failed to update organization:', error);
@@ -335,13 +304,15 @@ export async function updateOrganization(
 export async function deleteOrganization(
   id: string
 ): Promise<{ success: boolean; error?: string }> {
-  const db = getDatabase();
-
   try {
-    await db.organization.delete({
-      where: { id },
-    });
+    const supabase = await createClient();
+    
+    const { error } = await supabase
+      .from('organizations')
+      .delete()
+      .eq('id', id);
 
+    if (error) throw error;
     return { success: true };
   } catch (error) {
     console.error('Failed to delete organization:', error);
@@ -357,48 +328,39 @@ export async function deleteOrganization(
  * Get organization members
  */
 export async function getOrganizationMembers(organizationId: string) {
-  const db = getDatabase();
+  try {
+    const supabase = await createClient();
+    
+    const { data: members, error } = await supabase
+      .from('organization_members')
+      .select(`
+        *,
+        profiles:user_id (id, email, full_name, avatar_url),
+        roles:role_id (id, name, slug, permissions, hierarchy_level)
+      `)
+      .eq('organization_id', organizationId)
+      .order('joined_at', { ascending: true });
 
-  const members = await db.organizationMember.findMany({
-    where: { organization_id: organizationId },
-    include: {
-      user: {
-        select: {
-          id: true,
-          email: true,
-          full_name: true,
-          avatar_url: true,
-        },
-      },
-      role: {
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          permissions: true,
-          hierarchy_level: true,
-        },
-      },
-    },
-    orderBy: [{ role: { hierarchy_level: 'desc' } }, { joined_at: 'asc' }],
-  });
+    if (error) throw error;
 
-  return members.map((m) => ({
-    id: m.id,
-    userId: m.user_id,
-    email: m.user.email,
-    fullName: m.user.full_name,
-    avatarUrl: m.user.avatar_url,
-    role: m.role
-      ? {
-          id: m.role.id,
-          name: m.role.name,
-          slug: m.role.slug,
-        }
-      : null,
-    status: m.status,
-    joinedAt: m.joined_at,
-  }));
+    return (members || []).map((m: any) => ({
+      id: m.id,
+      userId: m.user_id,
+      email: m.profiles?.email,
+      fullName: m.profiles?.full_name,
+      avatarUrl: m.profiles?.avatar_url,
+      role: m.roles ? {
+        id: m.roles.id,
+        name: m.roles.name,
+        slug: m.roles.slug,
+      } : null,
+      status: m.status,
+      joinedAt: m.joined_at,
+    }));
+  } catch (error) {
+    console.error('Failed to get organization members:', error);
+    return [];
+  }
 }
 
 /**
@@ -409,30 +371,31 @@ export async function addOrganizationMember(
   userId: string,
   roleId?: string
 ): Promise<{ success: boolean; error?: string }> {
-  const db = getDatabase();
-
   try {
+    const supabase = await createClient();
+    
     // Get default member role if not provided
     let finalRoleId = roleId;
     if (!finalRoleId) {
-      const memberRole = await db.role.findFirst({
-        where: {
-          organization_id: organizationId,
-          slug: 'member',
-        },
-      });
+      const { data: memberRole } = await supabase
+        .from('roles')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('slug', 'member')
+        .single();
       finalRoleId = memberRole?.id;
     }
 
-    await db.organizationMember.create({
-      data: {
+    const { error } = await supabase
+      .from('organization_members')
+      .insert({
         organization_id: organizationId,
         user_id: userId,
         role_id: finalRoleId,
         status: 'active',
-      },
-    });
+      });
 
+    if (error) throw error;
     return { success: true };
   } catch (error) {
     console.error('Failed to add member:', error);
@@ -447,18 +410,16 @@ export async function removeOrganizationMember(
   organizationId: string,
   userId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const db = getDatabase();
-
   try {
-    await db.organizationMember.delete({
-      where: {
-        organization_id_user_id: {
-          organization_id: organizationId,
-          user_id: userId,
-        },
-      },
-    });
+    const supabase = await createClient();
+    
+    const { error } = await supabase
+      .from('organization_members')
+      .delete()
+      .eq('organization_id', organizationId)
+      .eq('user_id', userId);
 
+    if (error) throw error;
     return { success: true };
   } catch (error) {
     console.error('Failed to remove member:', error);
@@ -474,21 +435,16 @@ export async function updateMemberRole(
   userId: string,
   roleId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const db = getDatabase();
-
   try {
-    await db.organizationMember.update({
-      where: {
-        organization_id_user_id: {
-          organization_id: organizationId,
-          user_id: userId,
-        },
-      },
-      data: {
-        role_id: roleId,
-      },
-    });
+    const supabase = await createClient();
+    
+    const { error } = await supabase
+      .from('organization_members')
+      .update({ role_id: roleId })
+      .eq('organization_id', organizationId)
+      .eq('user_id', userId);
 
+    if (error) throw error;
     return { success: true };
   } catch (error) {
     console.error('Failed to update member role:', error);
@@ -506,29 +462,28 @@ export async function updateMemberRole(
 export async function createInvitation(
   input: InviteMemberInput
 ): Promise<{ token: string; error?: string }> {
-  const db = getDatabase();
-
   try {
+    const supabase = await createClient();
+    
     // Check if user is already a member
-    const existingMember = await db.organizationMember.findFirst({
-      where: {
-        organization_id: input.organizationId,
-        user: { email: input.email },
-      },
-    });
+    const { data: existingMember } = await supabase
+      .from('organization_members')
+      .select('id')
+      .eq('organization_id', input.organizationId)
+      .single();
 
     if (existingMember) {
       return { token: '', error: 'User is already a member' };
     }
 
     // Check for existing pending invitation
-    const existingInvitation = await db.invitation.findFirst({
-      where: {
-        organization_id: input.organizationId,
-        email: input.email,
-        status: 'pending',
-      },
-    });
+    const { data: existingInvitation } = await supabase
+      .from('invitations')
+      .select('id')
+      .eq('organization_id', input.organizationId)
+      .eq('email', input.email)
+      .eq('status', 'pending')
+      .single();
 
     if (existingInvitation) {
       return { token: '', error: 'Invitation already sent' };
@@ -537,30 +492,31 @@ export async function createInvitation(
     // Get default member role if not provided
     let roleId = input.roleId;
     if (!roleId) {
-      const memberRole = await db.role.findFirst({
-        where: {
-          organization_id: input.organizationId,
-          slug: 'member',
-        },
-      });
+      const { data: memberRole } = await supabase
+        .from('roles')
+        .select('id')
+        .eq('organization_id', input.organizationId)
+        .eq('slug', 'member')
+        .single();
       roleId = memberRole?.id;
     }
 
     const token = generateInvitationToken();
     const expiresAt = getInvitationExpiry();
 
-    await db.invitation.create({
-      data: {
+    const { error } = await supabase
+      .from('invitations')
+      .insert({
         organization_id: input.organizationId,
         email: input.email,
         role_id: roleId,
         invited_by: input.invitedBy,
         token,
-        expires_at: expiresAt,
+        expires_at: expiresAt.toISOString(),
         status: 'pending',
-      },
-    });
+      });
 
+    if (error) throw error;
     return { token };
   } catch (error) {
     console.error('Failed to create invitation:', error);
@@ -575,15 +531,16 @@ export async function acceptInvitation(
   token: string,
   userId: string
 ): Promise<{ success: boolean; organizationId?: string; error?: string }> {
-  const db = getDatabase();
-
   try {
-    const invitation = await db.invitation.findUnique({
-      where: { token },
-      include: { organization: true },
-    });
+    const supabase = await createClient();
+    
+    const { data: invitation, error: findError } = await supabase
+      .from('invitations')
+      .select('*')
+      .eq('token', token)
+      .single();
 
-    if (!invitation) {
+    if (findError || !invitation) {
       return { success: false, error: 'Invitation not found' };
     }
 
@@ -591,33 +548,32 @@ export async function acceptInvitation(
       return { success: false, error: 'Invitation is no longer valid' };
     }
 
-    if (invitation.expires_at < new Date()) {
-      await db.invitation.update({
-        where: { id: invitation.id },
-        data: { status: 'expired' },
-      });
+    if (new Date(invitation.expires_at) < new Date()) {
+      await supabase
+        .from('invitations')
+        .update({ status: 'expired' })
+        .eq('id', invitation.id);
       return { success: false, error: 'Invitation has expired' };
     }
 
-    // Accept invitation and add member in a transaction
-    await db.$transaction(async (tx) => {
-      await tx.invitation.update({
-        where: { id: invitation.id },
-        data: {
-          status: 'accepted',
-          accepted_at: new Date(),
-        },
-      });
+    // Update invitation status
+    await supabase
+      .from('invitations')
+      .update({
+        status: 'accepted',
+        accepted_at: new Date().toISOString(),
+      })
+      .eq('id', invitation.id);
 
-      await tx.organizationMember.create({
-        data: {
-          organization_id: invitation.organization_id,
-          user_id: userId,
-          role_id: invitation.role_id,
-          status: 'active',
-        },
+    // Add member
+    await supabase
+      .from('organization_members')
+      .insert({
+        organization_id: invitation.organization_id,
+        user_id: userId,
+        role_id: invitation.role_id,
+        status: 'active',
       });
-    });
 
     return {
       success: true,
@@ -633,37 +589,37 @@ export async function acceptInvitation(
  * Get pending invitations for an organization
  */
 export async function getOrganizationInvitations(organizationId: string) {
-  const db = getDatabase();
+  try {
+    const supabase = await createClient();
+    
+    const { data: invitations, error } = await supabase
+      .from('invitations')
+      .select(`
+        *,
+        inviter:invited_by (id, email, full_name)
+      `)
+      .eq('organization_id', organizationId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
 
-  const invitations = await db.invitation.findMany({
-    where: {
-      organization_id: organizationId,
-      status: 'pending',
-    },
-    include: {
-      inviter: {
-        select: {
-          id: true,
-          email: true,
-          full_name: true,
-        },
+    if (error) throw error;
+
+    return (invitations || []).map((inv: any) => ({
+      id: inv.id,
+      email: inv.email,
+      roleId: inv.role_id,
+      invitedBy: {
+        id: inv.inviter?.id,
+        email: inv.inviter?.email,
+        fullName: inv.inviter?.full_name,
       },
-    },
-    orderBy: { created_at: 'desc' },
-  });
-
-  return invitations.map((inv) => ({
-    id: inv.id,
-    email: inv.email,
-    roleId: inv.role_id,
-    invitedBy: {
-      id: inv.inviter.id,
-      email: inv.inviter.email,
-      fullName: inv.inviter.full_name,
-    },
-    expiresAt: inv.expires_at,
-    createdAt: inv.created_at,
-  }));
+      expiresAt: inv.expires_at,
+      createdAt: inv.created_at,
+    }));
+  } catch (error) {
+    console.error('Failed to get invitations:', error);
+    return [];
+  }
 }
 
 /**
@@ -672,14 +628,15 @@ export async function getOrganizationInvitations(organizationId: string) {
 export async function revokeInvitation(
   invitationId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const db = getDatabase();
-
   try {
-    await db.invitation.update({
-      where: { id: invitationId },
-      data: { status: 'revoked' },
-    });
+    const supabase = await createClient();
+    
+    const { error } = await supabase
+      .from('invitations')
+      .update({ status: 'revoked' })
+      .eq('id', invitationId);
 
+    if (error) throw error;
     return { success: true };
   } catch (error) {
     console.error('Failed to revoke invitation:', error);
