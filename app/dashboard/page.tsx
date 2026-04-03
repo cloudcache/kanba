@@ -79,16 +79,27 @@ export default function DashboardPage() {
       
       setProfile(profile);
 
-      // Get user projects (both owned and shared)
-      const { data: projects } = await supabase
+      // Get user's own projects
+      const { data: ownedProjects } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      // Get shared projects (where user is a member but not owner)
+      const { data: sharedProjects } = await supabase
         .from('projects')
         .select(`
           *,
           project_members!inner(role)
         `)
+        .neq('user_id', user.id)
+        .eq('project_members.user_id', user.id)
         .order('created_at', { ascending: false });
-      
-      setProjects(projects || []);
+
+      // Combine both lists
+      const allProjects = [...(ownedProjects || []), ...(sharedProjects || [])];
+      setProjects(allProjects);
 
       // Get tasks assigned to the user
       const { data: tasks } = await supabase

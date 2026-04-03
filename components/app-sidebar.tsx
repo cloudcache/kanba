@@ -29,6 +29,7 @@ import {
   Calendar,
   Bookmark,
   CrownIcon,
+  Shield,
 } from "lucide-react"
 import { useRouter, usePathname } from "next/navigation"
 import { toast } from "sonner"
@@ -100,6 +101,7 @@ const menuItems = [
   { title: "Meetings (soon)", url: "/dashboard/integrations", icon: Calendar, disabled: true },
   { title: "Settings", url: "/dashboard/settings", icon: SettingsIcon },
   { title: "Billing", url: "/dashboard/billing", icon: CreditCardIcon },
+  { title: "Admin", url: "/admin", icon: Shield, adminOnly: true },
 ]
 
 export function AppSidebar({ onSignOut, onProjectUpdate }: AppSidebarProps) {
@@ -111,16 +113,18 @@ export function AppSidebar({ onSignOut, onProjectUpdate }: AppSidebarProps) {
   const [loadingProjects, setLoadingProjects] = React.useState(false);
   const { theme, setTheme } = useTheme();
   const [subscription, setSubscription] = useState<'free' | 'pro'>('free');
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     if (user?.id) {
       supabase
         .from('profiles')
-        .select('subscription_status')
+        .select('subscription_status, is_admin')
         .eq('id', user.id)
         .single()
         .then(({ data }) => {
           if (data?.subscription_status) setSubscription(data.subscription_status);
+          if (data?.is_admin) setIsAdmin(data.is_admin);
         });
     }
   }, [user?.id]);
@@ -237,7 +241,7 @@ export function AppSidebar({ onSignOut, onProjectUpdate }: AppSidebarProps) {
           </div>
           <SidebarGroupContent>
             <SidebarMenu>
-              {menuItems.map((item) => {
+              {menuItems.filter(item => !(item as any).adminOnly || isAdmin).map((item) => {
                 if (item.title === "Bookmarks") {
                   const isPro = userData.subscription === 'pro';
                   return (

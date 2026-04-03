@@ -184,6 +184,9 @@ model Profile {
   locale   String @default("en") @db.VarChar(10)
   timezone String @default("UTC") @db.VarChar(50)
 
+  // Admin fields
+  is_admin Boolean @default(false)
+
   // Relations
   projects         Project[]
   project_members  ProjectMember[]
@@ -884,4 +887,26 @@ model StripeOrder {
   deleted_at          DateTime?
 
   @@map("stripe_orders")
+}
+
+// Subscription Plans Configuration
+model SubscriptionPlan {
+  id                String   @id @default(cuid())
+  name              String   @db.VarChar(100)
+  description       String?  @db.Text
+  price             Decimal  @default(0) @db.Decimal(10, 2)
+  currency          String   @default("usd") @db.VarChar(10)
+  interval          String   @default("month") @db.VarChar(10)
+  stripe_product_id String?  @db.VarChar(255)
+  stripe_price_id   String?  @db.VarChar(255)
+  features          Json     @default("[]")
+  project_limit     Int      @default(1)
+  task_limit        Int      @default(100)
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  @@index([is_active])
+  @@index([price])
+  @@map("subscription_plans")
 }
