@@ -735,6 +735,96 @@ model TaskLabel {
 }
 
 // =============================================================================
+// PHASE 5: API Keys & Webhooks
+// =============================================================================
+
+model ApiKey {
+  id              String    @id @default(cuid())
+  organization_id String?
+  user_id         String
+  name            String    @db.VarChar(100)
+  key_hash        String    @unique @db.VarChar(255)
+  key_prefix      String    @db.VarChar(20)
+  scopes          String[]  @default([])
+  rate_limit      Int       @default(1000)
+  last_used_at    DateTime?
+  expires_at      DateTime?
+  revoked_at      DateTime?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  @@index([user_id])
+  @@index([organization_id])
+  @@index([key_prefix])
+  @@map("api_keys")
+}
+
+model Webhook {
+  id              String        @id @default(cuid())
+  organization_id String?
+  project_id      String?
+  name            String        @db.VarChar(100)
+  url             String        @db.VarChar(1000)
+  secret          String?       @db.VarChar(255)
+  events          String[]      @default([])
+  is_active       Boolean       @default(true)
+  retry_count     Int           @default(3)
+  timeout_seconds Int           @default(30)
+  created_by      String
+  created_at      DateTime      @default(now())
+  updated_at      DateTime      @updatedAt
+
+  // Relations
+  deliveries WebhookDelivery[]
+
+  @@index([organization_id])
+  @@index([project_id])
+  @@index([is_active])
+  @@map("webhooks")
+}
+
+model WebhookDelivery {
+  id            String   @id @default(cuid())
+  webhook_id    String
+  event_type    String   @db.VarChar(50)
+  payload       Json
+  response_code Int?
+  response_body String?  @db.Text
+  error_message String?  @db.Text
+  attempts      Int      @default(1)
+  delivered_at  DateTime?
+  created_at    DateTime @default(now())
+
+  // Relations
+  webhook Webhook @relation(fields: [webhook_id], references: [id], onDelete: Cascade)
+
+  @@index([webhook_id])
+  @@index([event_type])
+  @@index([created_at])
+  @@map("webhook_deliveries")
+}
+
+model AutomationRule {
+  id               String    @id @default(cuid())
+  project_id       String
+  name             String    @db.VarChar(100)
+  description      String?   @db.VarChar(500)
+  trigger_config   Json
+  conditions       Json?
+  actions          Json
+  is_enabled       Boolean   @default(true)
+  created_by       String
+  last_triggered_at DateTime?
+  trigger_count    Int       @default(0)
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  @@index([project_id])
+  @@index([is_enabled])
+  @@map("automation_rules")
+}
+
+// =============================================================================
 // PHASE 1: System Settings
 // =============================================================================
 
