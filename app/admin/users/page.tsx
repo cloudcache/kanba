@@ -157,7 +157,6 @@ export default function UsersManagement() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="border-b">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -179,7 +178,6 @@ export default function UsersManagement() {
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        {/* Search */}
         <div className="flex items-center gap-4 mb-6">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -192,7 +190,6 @@ export default function UsersManagement() {
           </div>
         </div>
 
-        {/* Users Table */}
         <div className="border rounded-lg">
           <Table>
             <TableHeader>
@@ -309,7 +306,6 @@ export default function UsersManagement() {
         </div>
       </main>
 
-      {/* Confirmation Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>

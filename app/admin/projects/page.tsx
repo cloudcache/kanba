@@ -22,14 +22,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -56,7 +48,6 @@ interface Project {
   id: string;
   name: string;
   description: string | null;
-  slug: string;
   user_id: string;
   created_at: string;
   updated_at: string;
@@ -95,7 +86,6 @@ export default function ProjectsManagement() {
 
       if (error) throw error;
       
-      // Get task counts for each project
       const projectsWithCounts = await Promise.all((data || []).map(async (project) => {
         const { count: columnCount } = await supabase
           .from('columns')
@@ -105,13 +95,7 @@ export default function ProjectsManagement() {
         const { count: taskCount } = await supabase
           .from('tasks')
           .select('*', { count: 'exact', head: true })
-          .in('column_id', 
-            (await supabase
-              .from('columns')
-              .select('id')
-              .eq('project_id', project.id)
-            ).data?.map(c => c.id) || []
-          );
+          .eq('project_id', project.id);
 
         return {
           ...project,
@@ -163,7 +147,6 @@ export default function ProjectsManagement() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="border-b">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -185,7 +168,6 @@ export default function ProjectsManagement() {
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        {/* Search */}
         <div className="flex items-center gap-4 mb-6">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -198,7 +180,6 @@ export default function ProjectsManagement() {
           </div>
         </div>
 
-        {/* Projects Table */}
         <div className="border rounded-lg">
           <Table>
             <TableHeader>
@@ -266,7 +247,7 @@ export default function ProjectsManagement() {
                           <DropdownMenuLabel>Actions</DropdownMenuLabel>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem asChild>
-                            <Link href={`/dashboard/projects/${project.slug}`} target="_blank">
+                            <Link href={`/dashboard/projects/${project.id}`} target="_blank">
                               <ExternalLink className="h-4 w-4 mr-2" />
                               Open Project
                             </Link>
@@ -293,7 +274,6 @@ export default function ProjectsManagement() {
         </div>
       </main>
 
-      {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

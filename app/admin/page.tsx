@@ -12,7 +12,6 @@ import {
   Settings, 
   Shield,
   Activity,
-  Database,
   Globe,
 } from 'lucide-react';
 
@@ -39,7 +38,6 @@ export default function AdminDashboard() {
   useEffect(() => {
     async function fetchStats() {
       try {
-        // Fetch user stats
         const { count: totalUsers } = await supabase
           .from('profiles')
           .select('*', { count: 'exact', head: true });
@@ -54,17 +52,14 @@ export default function AdminDashboard() {
           .select('*', { count: 'exact', head: true })
           .eq('is_admin', true);
 
-        // Fetch project stats
         const { count: totalProjects } = await supabase
           .from('projects')
           .select('*', { count: 'exact', head: true });
 
-        // Fetch task stats
         const { count: totalTasks } = await supabase
           .from('tasks')
           .select('*', { count: 'exact', head: true });
 
-        // Calculate active users (logged in within last 30 days)
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         
@@ -109,7 +104,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="border-b">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -126,7 +120,6 @@ export default function AdminDashboard() {
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
           {statCards.map((stat) => (
             <Card key={stat.title}>
@@ -145,7 +138,6 @@ export default function AdminDashboard() {
           ))}
         </div>
 
-        {/* Menu Grid */}
         <h2 className="text-lg font-semibold mb-4">Management</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {menuItems.map((item) => (
