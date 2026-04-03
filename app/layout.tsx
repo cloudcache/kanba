@@ -4,6 +4,7 @@ import { Inter } from 'next/font/google';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
 import { UserProvider } from '@/components/user-provider';
+import { I18nProvider } from '@/lib/i18n/context';
 import { Analytics } from "@vercel/analytics/next"
 import Script from 'next/script'
 
@@ -67,12 +68,13 @@ export default function RootLayout({
       </head>
       <body className={inter.className}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-        
-          <UserProvider>
-          <Analytics />
-            {children}
-            <Toaster />
-          </UserProvider>
+          <I18nProvider>
+            <UserProvider>
+              <Analytics />
+              {children}
+              <Toaster />
+            </UserProvider>
+          </I18nProvider>
         </ThemeProvider>
       </body>
     </html>

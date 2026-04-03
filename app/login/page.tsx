@@ -8,29 +8,43 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { Kanban, Loader2 } from 'lucide-react';
+import { Loader2, Building2 } from 'lucide-react';
 import Image from 'next/image'; 
 import { useTheme } from 'next-themes';
 import { ShineBorder } from '@/src/components/magicui/shine-border';
+import { LDAPLoginForm } from '@/components/auth/ldap-login-form';
+import { useTranslation } from '@/lib/i18n/context';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [authProviders, setAuthProviders] = useState<string[]>(['supabase']);
+  const [activeTab, setActiveTab] = useState('supabase');
   const router = useRouter();
-  const { theme, setTheme } = useTheme();
+  const { theme } = useTheme();
+  const { t } = useTranslation();
 
   useEffect(() => {
-    // Check if user is already logged in
-    const checkAuth = async () => {
+    // Check if user is already logged in and fetch available auth providers
+    const initialize = async () => {
       try {
+        // Check auth session
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           router.push('/dashboard');
           return;
+        }
+
+        // Fetch available auth providers
+        const response = await fetch('/api/auth/providers');
+        if (response.ok) {
+          const data = await response.json();
+          setAuthProviders(data.providers || ['supabase']);
         }
       } catch (error) {
         console.error('Auth check error:', error);
@@ -39,8 +53,11 @@ export default function LoginPage() {
       }
     };
 
-    checkAuth();
+    initialize();
   }, [router]);
+
+  const ldapEnabled = authProviders.includes('ldap') || authProviders.includes('lldap');
+  const ldapProvider = authProviders.includes('lldap') ? 'lldap' : 'ldap';
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,73 +123,144 @@ export default function LoginPage() {
                   alt="Kanba Logo" 
                 />
               </div>
-          <CardTitle className="text-2xl">Welcome back</CardTitle>
+          <CardTitle className="text-2xl">{t('auth.welcomeBack')}</CardTitle>
           <CardDescription>
-            Sign in to your Kanba account
+            {t('auth.signInDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col gap-2 mb-4">
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full flex items-center justify-center gap-2"
-              onClick={() => handleOAuthSignIn('google')}
-              disabled={loading}
-            >
-              <Image src="/google.svg" alt="Google" width={20} height={20} />
-              Sign in with Google
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full flex items-center justify-center gap-2"
-              onClick={() => handleOAuthSignIn('github')}
-              disabled={loading}
-            >
-              <Image src="/github.svg" alt="GitHub" width={20} height={20} className="dark: invert"/>
-              Sign in with GitHub
-            </Button>
-          </div>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Sign In
-            </Button>
-          </form>
+          {ldapEnabled ? (
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-4">
+                <TabsTrigger value="supabase">{t('auth.accountLogin')}</TabsTrigger>
+                <TabsTrigger value="ldap" className="flex items-center gap-1">
+                  <Building2 className="h-4 w-4" />
+                  {t('auth.enterpriseLogin')}
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="supabase">
+                <div className="flex flex-col gap-2 mb-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full flex items-center justify-center gap-2"
+                    onClick={() => handleOAuthSignIn('google')}
+                    disabled={loading}
+                  >
+                    <Image src="/google.svg" alt="Google" width={20} height={20} />
+                    {t('auth.signInWithGoogle')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full flex items-center justify-center gap-2"
+                    onClick={() => handleOAuthSignIn('github')}
+                    disabled={loading}
+                  >
+                    <Image src="/github.svg" alt="GitHub" width={20} height={20} className="dark:invert"/>
+                    {t('auth.signInWithGithub')}
+                  </Button>
+                </div>
+                <form onSubmit={handleLogin} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="email">{t('auth.email')}</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder={t('auth.enterEmail')}
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password">{t('auth.password')}</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder={t('auth.enterPassword')}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {t('auth.signIn')}
+                  </Button>
+                </form>
+              </TabsContent>
+              
+              <TabsContent value="ldap">
+                <LDAPLoginForm provider={ldapProvider as 'ldap' | 'lldap'} />
+              </TabsContent>
+            </Tabs>
+          ) : (
+            <>
+              <div className="flex flex-col gap-2 mb-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full flex items-center justify-center gap-2"
+                  onClick={() => handleOAuthSignIn('google')}
+                  disabled={loading}
+                >
+                  <Image src="/google.svg" alt="Google" width={20} height={20} />
+                  {t('auth.signInWithGoogle')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full flex items-center justify-center gap-2"
+                  onClick={() => handleOAuthSignIn('github')}
+                  disabled={loading}
+                >
+                  <Image src="/github.svg" alt="GitHub" width={20} height={20} className="dark:invert"/>
+                  {t('auth.signInWithGithub')}
+                </Button>
+              </div>
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">{t('auth.email')}</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder={t('auth.enterEmail')}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">{t('auth.password')}</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder={t('auth.enterPassword')}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {t('auth.signIn')}
+                </Button>
+              </form>
+            </>
+          )}
           
           <div className="mt-6 text-center text-sm">
-            <span className="text-muted-foreground">Don't have an account? </span>
+            <span className="text-muted-foreground">{t('auth.noAccount')} </span>
             <Link href="/signup" className="text-primary hover:underline">
-              Sign up
+              {t('auth.signUp')}
             </Link>
           </div>
           
           <div className="mt-4 text-center text-sm">
             <Link href="/forgot-password" className="text-primary hover:underline">
-              Forgot your password?
+              {t('auth.forgotPassword')}
             </Link>
           </div>
         </CardContent>
