@@ -11,7 +11,7 @@ import { useUser } from '@/components/user-provider';
 import { toast } from 'sonner';
 import { ArrowLeft, Loader2, Plus } from 'lucide-react';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
+import { projects as projectsDAL, users as usersDAL, columns as columnsDAL } from '@/lib/dal';
 
 interface Profile {
   id: string;
@@ -47,22 +47,13 @@ export default function NewProjectPage() {
     if (!user) return;
     
     try {
-      // Get user profile
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-      
-      setProfile(profile);
+      // Get user profile using DAL
+      const { data: profileData } = await usersDAL.getProfileById(user.id);
+      setProfile(profileData);
 
-      // Get project count
-      const { count } = await supabase
-        .from('projects')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id);
-      
-      setProjectCount(count || 0);
+      // Get project count using DAL
+      const { data: projects } = await projectsDAL.getUserProjects(user.id);
+      setProjectCount(projects?.length || 0);
     } catch (error) {
       console.error('Error:', error);
       toast.error('Failed to load user data');
@@ -101,19 +92,13 @@ export default function NewProjectPage() {
 
     setCheckingSlug(true);
     try {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('id')
-        .eq('slug', slug.trim())
-        .single();
+      const { data, error } = await projectsDAL.getProjectBySlug(slug.trim());
 
-      if (error && error.code === 'PGRST116') {
-        // No rows returned - slug is available
+      if (error || !data) {
+        // No project found - slug is available
         setSlugAvailable(true);
-      } else if (data) {
-        // Slug exists
-        setSlugAvailable(false);
       } else {
+        // Slug exists
         setSlugAvailable(false);
       }
     } catch (error) {
@@ -173,37 +158,18 @@ export default function NewProjectPage() {
     setCreating(true);
 
     try {
-      // Create project
-      const { data: project, error: projectError } = await supabase
-        .from('projects')
-        .insert({
-          name: projectName,
-          description: projectDescription || null,
-          slug: projectSlug.trim(),
-          user_id: user!.id,
-        })
-        .select()
-        .single();
+      // Create project using DAL
+      const { data: project, error: projectError } = await projectsDAL.createProject({
+        name: projectName,
+        description: projectDescription || null,
+        slug: projectSlug.trim(),
+        user_id: user!.id,
+      });
 
-      if (projectError) throw projectError;
+      if (projectError || !project) throw new Error(projectError || 'Failed to create project');
 
-      // Create default columns
-      const defaultColumns = [
-        { name: 'To Do', position: 0 },
-        { name: 'In Progress', position: 1 },
-        { name: 'Done', position: 2 },
-      ];
-
-      const { error: columnsError } = await supabase
-        .from('columns')
-        .insert(
-          defaultColumns.map(col => ({
-            ...col,
-            project_id: project.id,
-          }))
-        );
-
-      if (columnsError) throw columnsError;
+      // Create default columns using DAL
+      const { error: columnsError } = await columnsDAL.createDefaultColumns(project.id);
 
       // Notify sidebar to update
       if ((window as any).handleProjectUpdate) {

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/database';
 import { KanbanBoard } from '@/components/kanban-board';
 import { useTheme } from 'next-themes';
 import Image from "next/image";
@@ -22,7 +22,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
 
   useEffect(() => {
     async function fetchData() {
-      const { data: project } = await supabase
+      const { data: project } = await db
         .from('projects')
         .select('*')
         .eq('public_share_token', params.token)
@@ -33,7 +33,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
       }
       setProject(project);
 
-      const { data: columns } = await supabase
+      const { data: columns } = await db
         .from('columns')
         .select('*')
         .eq('project_id', project.id)
@@ -45,7 +45,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
 
       const columnsWithTasks = await Promise.all(
         columns.map(async (column: any) => {
-          const { data: tasks } = await supabase
+          const { data: tasks } = await db
             .from('tasks')
             .select('*')
             .eq('column_id', column.id)

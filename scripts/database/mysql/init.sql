@@ -411,5 +411,133 @@ INSERT INTO profiles (id, email, password_hash, full_name, is_admin, email_verif
   (UUID(), 'admin@kanba.local', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.Q.1z.lKT0lK0Vu', 'System Admin', TRUE, TRUE);
 
 -- ============================================
+-- ORGANIZATION TABLES
+-- ============================================
+
+-- Organizations (matches Prisma schema)
+CREATE TABLE IF NOT EXISTS organizations (
+  id VARCHAR(30) PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  slug VARCHAR(100) UNIQUE NOT NULL,
+  logo_url TEXT,
+  description TEXT,
+  billing_plan VARCHAR(50) DEFAULT 'free',
+  settings JSON,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Roles (matches Prisma schema)
+CREATE TABLE IF NOT EXISTS roles (
+  id VARCHAR(30) PRIMARY KEY,
+  organization_id VARCHAR(30),
+  name VARCHAR(100) NOT NULL,
+  slug VARCHAR(100) NOT NULL,
+  description VARCHAR(500),
+  permissions JSON DEFAULT '[]',
+  is_system BOOLEAN DEFAULT FALSE,
+  hierarchy_level INT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_org_slug (organization_id, slug),
+  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Organization Members (matches Prisma schema)
+CREATE TABLE IF NOT EXISTS organization_members (
+  id VARCHAR(30) PRIMARY KEY,
+  organization_id VARCHAR(30) NOT NULL,
+  user_id VARCHAR(30) NOT NULL,
+  role_id VARCHAR(30),
+  status ENUM('active', 'suspended', 'invited', 'pending') DEFAULT 'active',
+  joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_org_user (organization_id, user_id),
+  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE,
+  FOREIGN KEY (role_id) REFERENCES roles(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Invitations (matches Prisma schema)
+CREATE TABLE IF NOT EXISTS invitations (
+  id VARCHAR(30) PRIMARY KEY,
+  organization_id VARCHAR(30) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  role_id VARCHAR(30),
+  invited_by VARCHAR(30) NOT NULL,
+  token VARCHAR(255) UNIQUE NOT NULL,
+  status ENUM('pending', 'accepted', 'expired', 'revoked') DEFAULT 'pending',
+  expires_at TIMESTAMP NOT NULL,
+  accepted_at TIMESTAMP NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+  FOREIGN KEY (role_id) REFERENCES roles(id),
+  FOREIGN KEY (invited_by) REFERENCES profiles(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Workspaces (matches Prisma schema)
+CREATE TABLE IF NOT EXISTS workspaces (
+  id VARCHAR(30) PRIMARY KEY,
+  organization_id VARCHAR(30) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  slug VARCHAR(100) NOT NULL,
+  description TEXT,
+  icon VARCHAR(50),
+  color VARCHAR(20),
+  visibility ENUM('private', 'internal', 'public') DEFAULT 'private',
+  settings JSON,
+  position INT DEFAULT 0,
+  created_by VARCHAR(30),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_org_slug (organization_id, slug),
+  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+  FOREIGN KEY (created_by) REFERENCES profiles(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Workspace Members
+CREATE TABLE IF NOT EXISTS workspace_members (
+  id VARCHAR(30) PRIMARY KEY,
+  workspace_id VARCHAR(30) NOT NULL,
+  user_id VARCHAR(30) NOT NULL,
+  role_id VARCHAR(30),
+  status ENUM('active', 'suspended', 'invited', 'pending') DEFAULT 'active',
+  joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_workspace_user (workspace_id, user_id),
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE,
+  FOREIGN KEY (role_id) REFERENCES roles(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Workspace Projects
+CREATE TABLE IF NOT EXISTS workspace_projects (
+  id VARCHAR(30) PRIMARY KEY,
+  workspace_id VARCHAR(30) NOT NULL,
+  project_id VARCHAR(30) NOT NULL,
+  position INT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_workspace_project (workspace_id, project_id),
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Indexes for organization tables
+CREATE INDEX idx_org_members_org ON organization_members(organization_id);
+CREATE INDEX idx_org_members_user ON organization_members(user_id);
+CREATE INDEX idx_org_members_role ON organization_members(role_id);
+CREATE INDEX idx_invitations_token ON invitations(token);
+CREATE INDEX idx_invitations_email ON invitations(email);
+CREATE INDEX idx_invitations_status ON invitations(status);
+CREATE INDEX idx_workspaces_org ON workspaces(organization_id);
+CREATE INDEX idx_workspaces_visibility ON workspaces(visibility);
+CREATE INDEX idx_workspace_members_workspace ON workspace_members(workspace_id);
+CREATE INDEX idx_workspace_members_user ON workspace_members(user_id);
+CREATE INDEX idx_workspace_projects_project ON workspace_projects(project_id);
+CREATE INDEX idx_roles_system ON roles(is_system);
+
+-- ============================================
 -- END OF INITIALIZATION
 -- ============================================

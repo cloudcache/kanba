@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { supabase } from '@/lib/supabase';
+import { comments as commentsDAL } from '@/lib/dal';
 import { toast } from 'sonner';
 import { 
   MessageSquare, 
@@ -55,22 +55,10 @@ export function TaskComments({ taskId, currentUserId }: TaskCommentsProps) {
 
   const loadComments = async () => {
     try {
-      const { data: comments, error } = await supabase
-        .from('task_comments')
-        .select(`
-          *,
-          profiles:user_id (
-            id,
-            email,
-            full_name,
-            avatar_url
-          )
-        `)
-        .eq('task_id', taskId)
-        .order('created_at', { ascending: true });
+      const { data: commentsList, error } = await commentsDAL.getTaskComments(taskId);
 
-      if (error) throw error;
-      setComments(comments || []);
+      if (error) throw new Error(error);
+      setComments(commentsList || []);
     } catch (error: any) {
       console.error('Error loading comments:', error);
       toast.error('Failed to load comments');
@@ -90,15 +78,13 @@ export function TaskComments({ taskId, currentUserId }: TaskCommentsProps) {
     setSubmitting(true);
 
     try {
-      const { error } = await supabase
-        .from('task_comments')
-        .insert({
-          task_id: taskId,
-          user_id: currentUserId,
-          content: newComment.trim(),
-        });
+      const { error } = await commentsDAL.createComment({
+        task_id: taskId,
+        user_id: currentUserId,
+        content: newComment.trim(),
+      });
 
-      if (error) throw error;
+      if (error) throw new Error(error);
 
       setNewComment('');
       await loadComments();
@@ -118,15 +104,9 @@ export function TaskComments({ taskId, currentUserId }: TaskCommentsProps) {
     }
 
     try {
-      const { error } = await supabase
-        .from('task_comments')
-        .update({
-          content: editContent.trim(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', commentId);
+      const { error } = await commentsDAL.updateComment(commentId, editContent.trim());
 
-      if (error) throw error;
+      if (error) throw new Error(error);
 
       setEditingComment(null);
       setEditContent('');
@@ -144,12 +124,9 @@ export function TaskComments({ taskId, currentUserId }: TaskCommentsProps) {
     }
 
     try {
-      const { error } = await supabase
-        .from('task_comments')
-        .delete()
-        .eq('id', commentId);
+      const { error } = await commentsDAL.deleteComment(commentId);
 
-      if (error) throw error;
+      if (error) throw new Error(error);
 
       await loadComments();
       toast.success('Comment deleted successfully!');

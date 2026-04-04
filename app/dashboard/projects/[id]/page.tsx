@@ -40,7 +40,7 @@ import {
 import { TeamManagement } from '@/components/team-management';
 import { TaskComments } from '@/components/task-comments';
 import { ActivityFeed } from '@/components/activity-feed';
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/database';
 import { useUser } from '@/components/user-provider';
 import { toast } from 'sonner';
 import { 
@@ -136,7 +136,7 @@ export default function ProjectPage() {
     
     try {
       // Get user profile
-      const { data: profile } = await supabase
+      const { data: profile } = await db
         .from('profiles')
         .select('*')
         .eq('id', user.id)
@@ -156,7 +156,7 @@ export default function ProjectPage() {
   const loadProject = async () => {
     try {
       // Try to get project by slug first, then by id
-      let { data: project, error: projectError } = await supabase
+      let { data: project, error: projectError } = await db
         .from('projects')
         .select('*')
         .eq('slug', projectId)
@@ -164,7 +164,7 @@ export default function ProjectPage() {
 
       // If not found by slug, try by id
       if (projectError || !project) {
-        const { data: projectById, error: idError } = await supabase
+        const { data: projectById, error: idError } = await db
           .from('projects')
           .select('*')
           .eq('id', projectId)
@@ -181,7 +181,7 @@ export default function ProjectPage() {
       await loadProjectMembers();
 
       // Get columns with tasks
-      const { data: columns, error: columnsError } = await supabase
+      const { data: columns, error: columnsError } = await db
         .from('columns')
         .select('*')
         .eq('project_id', project?.id)
@@ -192,7 +192,7 @@ export default function ProjectPage() {
       // Get tasks for each column with assigned user info
       const columnsWithTasks = await Promise.all(
         columns.map(async (column) => {
-          const { data: tasks, error: tasksError } = await supabase
+          const { data: tasks, error: tasksError } = await db
             .from('tasks')
             .select(`
               *,
@@ -225,7 +225,7 @@ export default function ProjectPage() {
 
   const loadProjectMembers = async () => {
     try {
-      const { data: members, error } = await supabase
+      const { data: members, error } = await db
         .from('project_members')
         .select(`
           *,
@@ -265,7 +265,7 @@ export default function ProjectPage() {
       const column = columns.find(c => c.id === selectedColumnId);
       const nextPosition = column ? column.tasks.length : 0;
 
-      const { data: task, error } = await supabase
+      const { data: task, error } = await db
         .from('tasks')
         .insert({
           title: taskTitle.trim(),
@@ -310,7 +310,7 @@ export default function ProjectPage() {
     setCreating(true);
 
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tasks')
         .update({
           title: taskTitle.trim(),
@@ -348,7 +348,7 @@ export default function ProjectPage() {
     }
 
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tasks')
         .delete()
         .eq('id', taskId);
@@ -365,7 +365,7 @@ export default function ProjectPage() {
 
   const handleToggleDone = async (taskId: string, isDone: boolean) => {
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tasks')
         .update({
           is_done: isDone,
@@ -396,7 +396,7 @@ export default function ProjectPage() {
     try {
       const nextPosition = columns.length;
 
-      const { data: column, error } = await supabase
+      const { data: column, error } = await db
         .from('columns')
         .insert({
           name: columnName.trim(),
@@ -437,7 +437,7 @@ export default function ProjectPage() {
     setCreating(true);
 
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('columns')
         .update({
           name: columnName.trim(),
@@ -466,7 +466,7 @@ export default function ProjectPage() {
 
   const handleDeleteColumn = async (columnId: string) => {
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('columns')
         .delete()
         .eq('id', columnId);
@@ -492,7 +492,7 @@ export default function ProjectPage() {
     try {
       const newSlug = generateSlug(projectName);
       
-      const { error } = await supabase
+      const { error } = await db
         .from('projects')
         .update({
           name: projectName.trim(),
@@ -528,7 +528,7 @@ export default function ProjectPage() {
       // First, delete all tasks in the project (using .in() for multiple column IDs)
       if (columns.length > 0) {
         const columnIds = columns.map(col => col.id);
-        const { error: tasksError } = await supabase
+        const { error: tasksError } = await db
           .from('tasks')
           .delete()
           .in('column_id', columnIds);
@@ -537,7 +537,7 @@ export default function ProjectPage() {
       }
 
       // Then, delete all columns in the project
-      const { error: columnsError } = await supabase
+      const { error: columnsError } = await db
         .from('columns')
         .delete()
         .eq('project_id', project.id);
@@ -545,7 +545,7 @@ export default function ProjectPage() {
       if (columnsError) throw columnsError;
 
       // Delete project members
-      const { error: membersError } = await supabase
+      const { error: membersError } = await db
         .from('project_members')
         .delete()
         .eq('project_id', project.id);
@@ -553,7 +553,7 @@ export default function ProjectPage() {
       if (membersError) throw membersError;
 
       // Finally, delete the project
-      const { error: projectError } = await supabase
+      const { error: projectError } = await db
         .from('projects')
         .delete()
         .eq('id', project.id);
@@ -648,7 +648,7 @@ export default function ProjectPage() {
     let token = project.public_share_token;
     if (!token) {
       token = nanoid(16);
-      const { error } = await supabase
+      const { error } = await db
         .from('projects')
         .update({ public_share_token: token })
         .eq('id', project.id);
@@ -710,7 +710,7 @@ export default function ProjectPage() {
 
       // Update database
       const updatePromises = newTasks.map((task, index) =>
-        supabase
+        db
           .from('tasks')
           .update({ position: index, updated_by: user!.id })
           .eq('id', task.id)
@@ -743,7 +743,7 @@ export default function ProjectPage() {
       // Update database
       try {
         // 1. Update moved task's column and position
-        await supabase
+        await db
           .from('tasks')
           .update({
             column_id: destination.droppableId,
@@ -754,7 +754,7 @@ export default function ProjectPage() {
 
         // 2. Update positions in the source column
         const sourceUpdatePromises = startTasks.map((task, index) =>
-          supabase
+          db
             .from('tasks')
             .update({ position: index, updated_by: user!.id })
             .eq('id', task.id)
@@ -762,7 +762,7 @@ export default function ProjectPage() {
 
         // 3. Update positions in the destination column
         const finishUpdatePromises = finishTasks.map((task, index) =>
-          supabase
+          db
             .from('tasks')
             .update({ position: index, updated_by: user!.id })
             .eq('id', task.id)

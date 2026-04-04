@@ -31,7 +31,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/database';
 import { toast } from 'sonner';
 import { 
   ArrowLeft, 
@@ -76,7 +76,7 @@ export default function ProjectsManagement() {
   async function fetchProjects() {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('projects')
         .select(`
           *,
@@ -87,12 +87,12 @@ export default function ProjectsManagement() {
       if (error) throw error;
       
       const projectsWithCounts = await Promise.all((data || []).map(async (project) => {
-        const { count: columnCount } = await supabase
+        const { count: columnCount } = await db
           .from('columns')
           .select('*', { count: 'exact', head: true })
           .eq('project_id', project.id);
 
-        const { count: taskCount } = await supabase
+        const { count: taskCount } = await db
           .from('tasks')
           .select('*', { count: 'exact', head: true })
           .eq('project_id', project.id);
@@ -120,7 +120,7 @@ export default function ProjectsManagement() {
     
     setProcessing(true);
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('projects')
         .delete()
         .eq('id', selectedProject.id);

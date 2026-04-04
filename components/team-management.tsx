@@ -28,7 +28,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/database';
+import { authService } from '@/lib/auth';
 import { toast } from 'sonner';
 import { 
   Users, 
@@ -83,7 +84,7 @@ export function TeamManagement({ projectId, userSubscriptionStatus, isProjectOwn
 
   const loadMembers = async () => {
     try {
-      const { data: members, error } = await supabase
+      const { data: members, error } = await db
         .from('project_members_with_profiles')
         .select(`
           id,
@@ -139,23 +140,23 @@ export function TeamManagement({ projectId, userSubscriptionStatus, isProjectOwn
       console.log('🔍 Starting debug search...');
       
       // Test RPC function with generic search
-      const { data: allProfiles, error: allProfilesError } = await supabase
+      const { data: allProfiles, error: allProfilesError } = await db
         .rpc('search_users_for_collaboration', { search_term: 'a' }); // Search for users with 'a'
       
       console.log('📊 All profiles via RPC:', { allProfiles, error: allProfilesError });
       
       // Test specific search
-      const { data: searchProfiles, error: searchError } = await supabase
+      const { data: searchProfiles, error: searchError } = await db
         .rpc('search_users_for_collaboration', { search_term: 'test' });
       
       console.log('🔍 Search profiles via RPC:', { searchProfiles, error: searchError });
       
       // Get current user info
-      const { data: { user }, error: currentUserError } = await supabase.auth.getUser();
+      const { data: { user }, error: currentUserError } = await db.auth.getUser();
       console.log('🔐 Current user:', { user: user?.email, error: currentUserError });
       
       // Check RLS policies
-      const { data: rlsTest, error: rlsError } = await supabase
+      const { data: rlsTest, error: rlsError } = await db
         .rpc('get_profiles_count');
       
       console.log('🛡️ Profiles count test:', { rlsTest, error: rlsError });
@@ -189,7 +190,7 @@ export function TeamManagement({ projectId, userSubscriptionStatus, isProjectOwn
       console.log('🔍 Searching for users with term:', email);
       
       // Search for users using secure RPC function
-      const { data: users, error } = await supabase
+      const { data: users, error } = await db
         .rpc('search_users_for_collaboration', { search_term: email.trim() });
 
       console.log('📊 Search results:', { users, error, searchTerm: email });
@@ -242,7 +243,7 @@ export function TeamManagement({ projectId, userSubscriptionStatus, isProjectOwn
       console.log('🚀 Attempting to invite user:', inviteEmail);
       
       // Search for user by exact email match using secure RPC function
-      const { data: users, error: userError } = await supabase
+      const { data: users, error: userError } = await db
         .rpc('search_users_for_collaboration', { search_term: inviteEmail.trim() });
       
       // Tam eşleşen email adresini sonuçlardan bul
@@ -272,7 +273,7 @@ export function TeamManagement({ projectId, userSubscriptionStatus, isProjectOwn
       // RPC function artık profiles'dan arama yaptığı için ek kontrol gerekmez
 
       // Check if user is already a member
-      const { data: existingMember, error: memberError } = await supabase
+      const { data: existingMember, error: memberError } = await db
         .from('project_members')
         .select('id')
         .eq('project_id', projectId)
@@ -289,13 +290,13 @@ export function TeamManagement({ projectId, userSubscriptionStatus, isProjectOwn
       }
 
       // Add user as project member
-      const { error: inviteError } = await supabase
+      const { error: inviteError } = await db
         .from('project_members')
         .insert({
           project_id: projectId,
           user_id: existingUser.id,
           role: inviteRole,
-          invited_by: (await supabase.auth.getUser()).data.user?.id,
+          invited_by: (await authService.getSession())?.user?.id,
           joined_at: new Date().toISOString(),
         });
 
@@ -325,7 +326,7 @@ export function TeamManagement({ projectId, userSubscriptionStatus, isProjectOwn
     }
 
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('project_members')
         .delete()
         .eq('id', memberId);
@@ -342,7 +343,7 @@ export function TeamManagement({ projectId, userSubscriptionStatus, isProjectOwn
 
   const handleUpdateRole = async (memberId: string, newRole: 'admin' | 'member', memberName: string) => {
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('project_members')
         .update({ role: newRole })
         .eq('id', memberId);

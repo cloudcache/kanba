@@ -1,5 +1,7 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
+import { databaseConfig } from '@/lib/database';
+import { verify } from 'jsonwebtoken';
 
 /**
  * Alias for createServerSupabaseClientWithAuth for convenience
@@ -58,16 +60,53 @@ export async function createServerSupabaseClientWithAuth() {
 
 /**
  * Get the current authenticated user from the request
+ * Supports multiple auth providers (Supabase, Local JWT, LDAP)
  */
 export async function getServerUser() {
-  const supabase = await createServerSupabaseClientWithAuth();
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const authProvider = process.env.AUTH_PROVIDER || 'supabase';
   
-  if (error || !user) {
-    return null;
+  // For Supabase auth
+  if (authProvider === 'supabase' && databaseConfig.isSupabase) {
+    const supabase = await createServerSupabaseClientWithAuth();
+    const { data: { user }, error } = await supabase.auth.getUser();
+    
+    if (error || !user) {
+      return null;
+    }
+    
+    return user;
   }
   
-  return user;
+  // For local database or LDAP auth - use JWT session
+  try {
+    const cookieStore = await cookies();
+    const sessionToken = cookieStore.get('session_token')?.value;
+    
+    if (!sessionToken) {
+      return null;
+    }
+    
+    const jwtSecret = process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET || 'default-secret-change-me';
+    const decoded = verify(sessionToken, jwtSecret) as {
+      id: string;
+      email: string;
+      full_name?: string;
+      avatar_url?: string;
+      is_admin?: boolean;
+    };
+    
+    return {
+      id: decoded.id,
+      email: decoded.email,
+      user_metadata: {
+        full_name: decoded.full_name,
+        avatar_url: decoded.avatar_url,
+      },
+    };
+  } catch (error) {
+    console.error('JWT verification error:', error);
+    return null;
+  }
 }
 
 /**
@@ -81,4 +120,19 @@ export async function requireAuth() {
   }
   
   return user;
+}
+
+/**
+ * Get server database client based on configuration
+ * Returns the appropriate client for data operations
+ */
+export async function getServerDb() {
+  if (databaseConfig.isSupabase) {
+    return createServerSupabaseClientWithAuth();
+  }
+  
+  // For non-Supabase databases, return a client wrapper
+  // that provides a similar API surface
+  const { db } = await import('@/lib/database');
+  return db;
 }

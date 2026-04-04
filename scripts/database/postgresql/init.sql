@@ -422,5 +422,120 @@ INSERT INTO profiles (email, password_hash, full_name, is_admin, email_verified)
 ON CONFLICT (email) DO NOTHING;
 
 -- ============================================
+-- ORGANIZATION TABLES
+-- ============================================
+
+-- Organizations (matches Prisma schema)
+CREATE TABLE IF NOT EXISTS organizations (
+  id VARCHAR(30) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  name VARCHAR(100) NOT NULL,
+  slug VARCHAR(100) UNIQUE NOT NULL,
+  logo_url TEXT,
+  description TEXT,
+  billing_plan VARCHAR(50) DEFAULT 'free',
+  settings JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Roles (matches Prisma schema)
+CREATE TABLE IF NOT EXISTS roles (
+  id VARCHAR(30) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  organization_id VARCHAR(30) REFERENCES organizations(id) ON DELETE CASCADE,
+  name VARCHAR(100) NOT NULL,
+  slug VARCHAR(100) NOT NULL,
+  description VARCHAR(500),
+  permissions TEXT[] DEFAULT '{}',
+  is_system BOOLEAN DEFAULT false,
+  hierarchy_level INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(organization_id, slug)
+);
+
+-- Organization Members (matches Prisma schema)
+CREATE TABLE IF NOT EXISTS organization_members (
+  id VARCHAR(30) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  organization_id VARCHAR(30) NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  user_id VARCHAR(30) NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  role_id VARCHAR(30) REFERENCES roles(id),
+  status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'invited', 'pending')),
+  joined_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(organization_id, user_id)
+);
+
+-- Invitations (matches Prisma schema)
+CREATE TABLE IF NOT EXISTS invitations (
+  id VARCHAR(30) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  organization_id VARCHAR(30) NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  email VARCHAR(255) NOT NULL,
+  role_id VARCHAR(30) REFERENCES roles(id),
+  invited_by VARCHAR(30) NOT NULL REFERENCES profiles(id),
+  token VARCHAR(255) UNIQUE NOT NULL,
+  status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'expired', 'revoked')),
+  expires_at TIMESTAMPTZ NOT NULL,
+  accepted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Workspaces (matches Prisma schema)
+CREATE TABLE IF NOT EXISTS workspaces (
+  id VARCHAR(30) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  organization_id VARCHAR(30) NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  name VARCHAR(100) NOT NULL,
+  slug VARCHAR(100) NOT NULL,
+  description TEXT,
+  icon VARCHAR(50),
+  color VARCHAR(20),
+  visibility VARCHAR(20) DEFAULT 'private' CHECK (visibility IN ('private', 'internal', 'public')),
+  settings JSONB,
+  position INTEGER DEFAULT 0,
+  created_by VARCHAR(30) REFERENCES profiles(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(organization_id, slug)
+);
+
+-- Workspace Members
+CREATE TABLE IF NOT EXISTS workspace_members (
+  id VARCHAR(30) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  workspace_id VARCHAR(30) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  user_id VARCHAR(30) NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  role_id VARCHAR(30) REFERENCES roles(id),
+  status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'invited', 'pending')),
+  joined_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(workspace_id, user_id)
+);
+
+-- Workspace Projects
+CREATE TABLE IF NOT EXISTS workspace_projects (
+  id VARCHAR(30) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  workspace_id VARCHAR(30) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  project_id VARCHAR(30) NOT NULL,
+  position INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(workspace_id, project_id)
+);
+
+-- Indexes for organization tables
+CREATE INDEX IF NOT EXISTS idx_org_members_org ON organization_members(organization_id);
+CREATE INDEX IF NOT EXISTS idx_org_members_user ON organization_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_org_members_role ON organization_members(role_id);
+CREATE INDEX IF NOT EXISTS idx_invitations_token ON invitations(token);
+CREATE INDEX IF NOT EXISTS idx_invitations_email ON invitations(email);
+CREATE INDEX IF NOT EXISTS idx_invitations_status ON invitations(status);
+CREATE INDEX IF NOT EXISTS idx_workspaces_org ON workspaces(organization_id);
+CREATE INDEX IF NOT EXISTS idx_workspaces_visibility ON workspaces(visibility);
+CREATE INDEX IF NOT EXISTS idx_workspace_members_workspace ON workspace_members(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_projects_project ON workspace_projects(project_id);
+CREATE INDEX IF NOT EXISTS idx_roles_system ON roles(is_system);
+
+-- ============================================
 -- END OF INITIALIZATION
 -- ============================================

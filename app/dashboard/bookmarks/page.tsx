@@ -2,7 +2,7 @@
 
 import { useUser } from "@/components/user-provider";
 import { useEffect, useState } from "react";
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/database';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Image from 'next/image';
@@ -33,7 +33,7 @@ export default function BookmarksPage() {
 
   useEffect(() => {
     if (!user) return;
-    supabase
+    db
       .from('bookmarks')
       .select('*')
       .eq('user_id', user.id)
@@ -53,7 +53,7 @@ export default function BookmarksPage() {
     // Metadata çek
     const meta = await fetchMeta(normalizedUrl);
     const { title, icon, description } = meta || {};
-    const { error: insertError, data } = await supabase
+    const { error: insertError, data } = await db
       .from('bookmarks')
       .insert({
         user_id: user.id,
@@ -77,7 +77,7 @@ export default function BookmarksPage() {
     if (!user) return;
     setDeleting(bookmarkId);
     
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await db
       .from('bookmarks')
       .delete()
       .eq('id', bookmarkId)

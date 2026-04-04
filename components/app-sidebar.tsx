@@ -52,7 +52,7 @@ import {
 import { Notifications } from "@/components/notifications"
 import { useTheme } from "next-themes"
 import Link from "next/link"
-import { supabase } from "@/lib/supabase"
+import { users as usersDAL, projects as projectsDAL } from "@/lib/dal"
 import { Badge } from "@/components/ui/badge"
 import {
   Sidebar,
@@ -117,15 +117,10 @@ export function AppSidebar({ onSignOut, onProjectUpdate }: AppSidebarProps) {
 
   useEffect(() => {
     if (user?.id) {
-      supabase
-        .from('profiles')
-        .select('subscription_status, is_admin')
-        .eq('id', user.id)
-        .single()
-        .then(({ data }) => {
-          if (data?.subscription_status) setSubscription(data.subscription_status);
-          if (data?.is_admin) setIsAdmin(data.is_admin);
-        });
+      usersDAL.getProfileById(user.id).then(({ data }) => {
+        if (data?.subscription_status) setSubscription(data.subscription_status);
+        if (data?.is_admin) setIsAdmin(data.is_admin);
+      });
     }
   }, [user?.id]);
 
@@ -175,21 +170,13 @@ export function AppSidebar({ onSignOut, onProjectUpdate }: AppSidebarProps) {
   const loadProjects = async () => {
     if (!user) return;
     
-    console.log('Loading projects for user:', user.id);
     setLoadingProjects(true);
     try {
-      // Get projects owned by user
-      const { data: projects, error } = await supabase
-        .from('projects')
-        .select('id, name, slug, user_id')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(10);
+      // Get projects owned by user using DAL
+      const { data: projectsList, error } = await projectsDAL.getUserProjects(user.id, 10);
 
-      console.log('Projects query result:', { projects, error });
-
-      if (error) throw error;
-      setProjects(projects || []);
+      if (error) throw new Error(error);
+      setProjects(projectsList || []);
     } catch (error) {
       console.error('Error loading projects:', error);
       setProjects([]);

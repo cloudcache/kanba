@@ -30,7 +30,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { supabase } from '@/lib/supabase';
+import { users as usersDAL } from '@/lib/dal';
 import { toast } from 'sonner';
 import { 
   ArrowLeft, 
@@ -72,12 +72,9 @@ export default function UsersManagement() {
   async function fetchUsers() {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const { data, error } = await usersDAL.getAllProfiles();
 
-      if (error) throw error;
+      if (error) throw new Error(error);
       setUsers(data || []);
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -90,12 +87,9 @@ export default function UsersManagement() {
   async function toggleAdmin(user: User) {
     setProcessing(true);
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ is_admin: !user.is_admin })
-        .eq('id', user.id);
+      const { error } = await usersDAL.updateProfile(user.id, { is_admin: !user.is_admin });
 
-      if (error) throw error;
+      if (error) throw new Error(error);
 
       setUsers(users.map(u => 
         u.id === user.id ? { ...u, is_admin: !u.is_admin } : u
@@ -114,12 +108,9 @@ export default function UsersManagement() {
     setProcessing(true);
     try {
       const newStatus = user.subscription_status === 'pro' ? 'free' : 'pro';
-      const { error } = await supabase
-        .from('profiles')
-        .update({ subscription_status: newStatus })
-        .eq('id', user.id);
+      const { error } = await usersDAL.updateProfile(user.id, { subscription_status: newStatus });
 
-      if (error) throw error;
+      if (error) throw new Error(error);
 
       setUsers(users.map(u => 
         u.id === user.id ? { ...u, subscription_status: newStatus } : u
