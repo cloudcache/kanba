@@ -3,9 +3,12 @@
  * Phase 2: Organization & Workspace Management
  */
 
-import { getDatabase } from '@/lib/database';
+import { prisma, databaseConfig } from '@/lib/database';
 import { PRESET_ROLES } from '@/lib/permissions';
 import crypto from 'crypto';
+
+// Use Prisma for all database operations (supports PostgreSQL/MySQL)
+const db = prisma;
 
 // =============================================================================
 // Types
@@ -88,7 +91,6 @@ export function getInvitationExpiry(): Date {
 export async function createOrganization(
   input: CreateOrganizationInput
 ): Promise<{ organization: OrganizationWithMembers; error?: string }> {
-  const db = getDatabase();
 
   try {
     // Generate slug if not provided
@@ -192,7 +194,7 @@ export async function createOrganization(
 export async function getOrganization(
   id: string
 ): Promise<OrganizationWithMembers | null> {
-  const db = getDatabase();
+
 
   const org = await db.organization.findUnique({
     where: { id },
@@ -228,7 +230,7 @@ export async function getOrganization(
 export async function getOrganizationBySlug(
   slug: string
 ): Promise<OrganizationWithMembers | null> {
-  const db = getDatabase();
+
 
   const org = await db.organization.findUnique({
     where: { slug },
@@ -264,7 +266,7 @@ export async function getOrganizationBySlug(
 export async function getUserOrganizations(
   userId: string
 ): Promise<OrganizationWithMembers[]> {
-  const db = getDatabase();
+
 
   const memberships = await db.organizationMember.findMany({
     where: {
@@ -309,7 +311,7 @@ export async function updateOrganization(
   id: string,
   input: UpdateOrganizationInput
 ): Promise<{ success: boolean; error?: string }> {
-  const db = getDatabase();
+
 
   try {
     await db.organization.update({
@@ -335,7 +337,7 @@ export async function updateOrganization(
 export async function deleteOrganization(
   id: string
 ): Promise<{ success: boolean; error?: string }> {
-  const db = getDatabase();
+
 
   try {
     await db.organization.delete({
@@ -357,7 +359,7 @@ export async function deleteOrganization(
  * Get organization members
  */
 export async function getOrganizationMembers(organizationId: string) {
-  const db = getDatabase();
+
 
   const members = await db.organizationMember.findMany({
     where: { organization_id: organizationId },
@@ -409,7 +411,7 @@ export async function addOrganizationMember(
   userId: string,
   roleId?: string
 ): Promise<{ success: boolean; error?: string }> {
-  const db = getDatabase();
+
 
   try {
     // Get default member role if not provided
@@ -447,7 +449,7 @@ export async function removeOrganizationMember(
   organizationId: string,
   userId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const db = getDatabase();
+
 
   try {
     await db.organizationMember.delete({
@@ -474,7 +476,7 @@ export async function updateMemberRole(
   userId: string,
   roleId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const db = getDatabase();
+
 
   try {
     await db.organizationMember.update({
@@ -506,7 +508,7 @@ export async function updateMemberRole(
 export async function createInvitation(
   input: InviteMemberInput
 ): Promise<{ token: string; error?: string }> {
-  const db = getDatabase();
+
 
   try {
     // Check if user is already a member
@@ -575,7 +577,7 @@ export async function acceptInvitation(
   token: string,
   userId: string
 ): Promise<{ success: boolean; organizationId?: string; error?: string }> {
-  const db = getDatabase();
+
 
   try {
     const invitation = await db.invitation.findUnique({
@@ -633,7 +635,7 @@ export async function acceptInvitation(
  * Get pending invitations for an organization
  */
 export async function getOrganizationInvitations(organizationId: string) {
-  const db = getDatabase();
+
 
   const invitations = await db.invitation.findMany({
     where: {
@@ -672,7 +674,7 @@ export async function getOrganizationInvitations(organizationId: string) {
 export async function revokeInvitation(
   invitationId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const db = getDatabase();
+
 
   try {
     await db.invitation.update({
