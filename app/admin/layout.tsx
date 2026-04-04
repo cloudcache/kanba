@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/components/user-provider';
-import { supabase } from '@/lib/supabase';
+import { users as usersDAL } from '@/lib/dal';
 import { Loader2 } from 'lucide-react';
 
 export default function AdminLayout({
@@ -26,11 +26,7 @@ export default function AdminLayout({
       }
 
       try {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('is_admin')
-          .eq('id', user.id)
-          .single();
+        const { data: profile } = await usersDAL.getProfileById(user.id);
 
         if (!profile?.is_admin) {
           router.push('/dashboard');

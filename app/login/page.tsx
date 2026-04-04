@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { supabase } from '@/lib/supabase';
+import { authService, getAuthConfig } from '@/lib/auth';
 import { toast } from 'sonner';
 import { Loader2, Building2 } from 'lucide-react';
 import Image from 'next/image'; 
@@ -33,8 +33,8 @@ export default function LoginPage() {
     // Check if user is already logged in and fetch available auth providers
     const initialize = async () => {
       try {
-        // Check auth session
-        const { data: { session } } = await supabase.auth.getSession();
+        // Check auth session using authService
+        const session = await authService.getSession();
         if (session?.user) {
           router.push('/dashboard');
           return;
@@ -44,7 +44,7 @@ export default function LoginPage() {
         const response = await fetch('/api/auth/providers');
         if (response.ok) {
           const data = await response.json();
-          setAuthProviders(data.providers || ['supabase']);
+          setAuthProviders(data.providers || ['local']);
         }
       } catch (error) {
         console.error('Auth check error:', error);
@@ -64,14 +64,11 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { user, error } = await authService.signIn(email, password);
 
       if (error) {
-        toast.error(error.message);
-      } else {
+        toast.error(error);
+      } else if (user) {
         toast.success('Welcome back!');
         router.push('/dashboard');
       }
@@ -85,14 +82,9 @@ export default function LoginPage() {
   const handleOAuthSignIn = async (provider: 'google' | 'github') => {
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: `${window.location.origin}/dashboard`,
-        },
-      });
+      const { error } = await authService.signInWithOAuth(provider, `${window.location.origin}/dashboard`);
       if (error) {
-        toast.error(error.message);
+        toast.error(error);
       }
     } catch (error) {
       toast.error('An unexpected error occurred');

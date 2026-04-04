@@ -18,7 +18,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { supabase } from "@/lib/supabase";
+import { notifications as notificationsDAL } from "@/lib/dal";
 import { toast } from "sonner";
 import {
   Bell,
@@ -53,42 +53,20 @@ export function Notifications({ userId }: NotificationsProps) {
 
   useEffect(() => {
     loadNotifications();
-
-    // Set up real-time subscription for new notifications
-    const subscription = supabase
-      .channel("notifications")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "notifications",
-          filter: `user_id=eq.${userId}`,
-        },
-        () => {
-          loadNotifications();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
+    
+    // Poll for new notifications every 30 seconds (cross-database compatible)
+    const interval = setInterval(loadNotifications, 30000);
+    return () => clearInterval(interval);
   }, [userId]);
 
   const loadNotifications = async () => {
     try {
-      const { data: notifications, error } = await supabase
-        .from("notifications")
-        .select("*")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(20);
+      const { data: notificationsList, error } = await notificationsDAL.getUserNotifications(userId, 20);
 
-      if (error) throw error;
+      if (error) throw new Error(error);
 
-      setNotifications(notifications || []);
-      setUnreadCount((notifications || []).filter((n) => !n.read).length);
+      setNotifications(notificationsList || []);
+      setUnreadCount((notificationsList || []).filter((n: Notification) => !n.read).length);
     } catch (error: any) {
       console.error("Error loading notifications:", error);
     } finally {
@@ -98,12 +76,8 @@ export function Notifications({ userId }: NotificationsProps) {
 
   const markAsRead = async (notificationId: string) => {
     try {
-      const { error } = await supabase
-        .from("notifications")
-        .update({ read: true })
-        .eq("id", notificationId);
-
-      if (error) throw error;
+      const { error } = await notificationsDAL.markAsRead(notificationId);
+      if (error) throw new Error(error);
 
       setNotifications((prev) =>
         prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n))
@@ -116,13 +90,8 @@ export function Notifications({ userId }: NotificationsProps) {
 
   const markAllAsRead = async () => {
     try {
-      const { error } = await supabase
-        .from("notifications")
-        .update({ read: true })
-        .eq("user_id", userId)
-        .eq("read", false);
-
-      if (error) throw error;
+      const { error } = await notificationsDAL.markAllAsRead(userId);
+      if (error) throw new Error(error);
 
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       setUnreadCount(0);
@@ -135,12 +104,8 @@ export function Notifications({ userId }: NotificationsProps) {
 
   const deleteNotification = async (notificationId: string) => {
     try {
-      const { error } = await supabase
-        .from("notifications")
-        .delete()
-        .eq("id", notificationId);
-
-      if (error) throw error;
+      const { error } = await notificationsDAL.deleteNotification(notificationId);
+      if (error) throw new Error(error);
 
       setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
       setUnreadCount((prev) => {

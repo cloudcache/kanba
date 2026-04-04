@@ -36,17 +36,38 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient({
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL,
-    },
-  },
-});
+// Only initialize Prisma if we're using PostgreSQL/MySQL and DATABASE_URL is set
+function getPrismaClient(): PrismaClient | null {
+  if (!databaseConfig.isPostgres && !databaseConfig.isMysql) {
+    return null;
+  }
+  
+  if (!process.env.DATABASE_URL) {
+    console.warn('DATABASE_URL not set, Prisma client not initialized');
+    return null;
+  }
 
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
+  if (globalForPrisma.prisma) {
+    return globalForPrisma.prisma;
+  }
+
+  const client = new PrismaClient({
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL,
+      },
+    },
+  });
+
+  if (process.env.NODE_ENV !== 'production') {
+    globalForPrisma.prisma = client;
+  }
+
+  return client;
 }
+
+// Lazy-loaded Prisma client
+export const prisma = databaseConfig.isSupabase ? null : getPrismaClient();
 
 // ============================================
 // Supabase Client
@@ -331,7 +352,10 @@ export const dbHelpers = {
       return { data: { ...project, columns: columnsWithTasks }, error: null };
     } else {
       try {
-        const project = await prisma.project.findUnique({
+        if (!prisma) {
+          return { data: null, error: new Error('Prisma client not initialized') };
+        }
+        const project = await (prisma as PrismaClient).project.findUnique({
           where: { id: projectId },
           include: {
             columns: {
@@ -356,7 +380,10 @@ export const dbHelpers = {
         .order('created_at', { ascending: false });
     } else {
       try {
-        const projects = await prisma.project.findMany({
+        if (!prisma) {
+          return { data: null, error: new Error('Prisma client not initialized') };
+        }
+        const projects = await (prisma as PrismaClient).project.findMany({
           where: { user_id: userId },
           orderBy: { created_at: 'desc' },
         });
@@ -377,7 +404,10 @@ export const dbHelpers = {
         .limit(limit);
     } else {
       try {
-        const tasks = await prisma.task.findMany({
+        if (!prisma) {
+          return { data: null, error: new Error('Prisma client not initialized') };
+        }
+        const tasks = await (prisma as PrismaClient).task.findMany({
           where: { assigned_to: userId },
           orderBy: { created_at: 'desc' },
           take: limit,

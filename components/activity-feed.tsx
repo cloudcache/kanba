@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/database';
 import { toast } from 'sonner';
 import { 
   Activity, 
@@ -49,7 +49,7 @@ export function ActivityFeed({ projectId, limit = 20 }: ActivityFeedProps) {
 
   const loadActivities = async () => {
     try {
-      let query = supabase
+      let query = db
         .from('activity_logs')
         .select(`
           *,

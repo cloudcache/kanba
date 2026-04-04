@@ -25,6 +25,9 @@ export interface UpdateProfileInput {
   avatar_url?: string;
   locale?: string;
   timezone?: string;
+  is_admin?: boolean;
+  subscription_status?: 'free' | 'pro' | 'enterprise';
+  stripe_customer_id?: string;
 }
 
 // ============================================

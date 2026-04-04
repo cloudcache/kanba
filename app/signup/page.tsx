@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { supabase } from '@/lib/supabase';
+import { authService } from '@/lib/auth';
 import { toast } from 'sonner';
 import { Kanban, Loader2 } from 'lucide-react';
 import Image from 'next/image';
@@ -28,7 +28,7 @@ export default function SignUpPage() {
     // Check if user is already logged in
     const checkAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const session = await authService.getSession();
         if (session?.user) {
           router.push('/dashboard');
           return;
@@ -48,19 +48,11 @@ export default function SignUpPage() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-          },
-        },
-      });
+      const { user, error } = await authService.signUp(email, password, fullName);
 
       if (error) {
-        toast.error(error.message);
-      } else {
+        toast.error(error);
+      } else if (user) {
         toast.success('Account created successfully! Please check your email to verify your account.');
         router.push('/login');
       }
@@ -74,14 +66,9 @@ export default function SignUpPage() {
   const handleOAuthSignIn = async (provider: 'google' | 'github') => {
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: `${window.location.origin}/dashboard`,
-        },
-      });
+      const { error } = await authService.signInWithOAuth(provider, `${window.location.origin}/dashboard`);
       if (error) {
-        toast.error(error.message);
+        toast.error(error);
       }
     } catch (error) {
       toast.error('An unexpected error occurred');

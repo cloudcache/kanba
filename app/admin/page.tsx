@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/database';
 import { 
   Users, 
   FolderKanban, 
@@ -38,32 +38,32 @@ export default function AdminDashboard() {
   useEffect(() => {
     async function fetchStats() {
       try {
-        const { count: totalUsers } = await supabase
+        const { count: totalUsers } = await db
           .from('profiles')
           .select('*', { count: 'exact', head: true });
 
-        const { count: proUsers } = await supabase
+        const { count: proUsers } = await db
           .from('profiles')
           .select('*', { count: 'exact', head: true })
           .eq('subscription_status', 'pro');
 
-        const { count: adminUsers } = await supabase
+        const { count: adminUsers } = await db
           .from('profiles')
           .select('*', { count: 'exact', head: true })
           .eq('is_admin', true);
 
-        const { count: totalProjects } = await supabase
+        const { count: totalProjects } = await db
           .from('projects')
           .select('*', { count: 'exact', head: true });
 
-        const { count: totalTasks } = await supabase
+        const { count: totalTasks } = await db
           .from('tasks')
           .select('*', { count: 'exact', head: true });
 
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         
-        const { count: activeUsers } = await supabase
+        const { count: activeUsers } = await db
           .from('profiles')
           .select('*', { count: 'exact', head: true })
           .gte('updated_at', thirtyDaysAgo.toISOString());

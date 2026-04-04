@@ -17,7 +17,7 @@ import {
   ExternalLink,
   AlertCircle
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { users as usersDAL, settings as settingsDAL } from '@/lib/dal';
 
 interface Profile {
   id: string;
@@ -55,22 +55,12 @@ export default function BillingPage() {
     if (!user) return;
     
     try {
-      // Get user profile
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-      
-      setProfile(profile);
+      // Get user profile using DAL
+      const { data: profileData } = await usersDAL.getProfileById(user.id);
+      setProfile(profileData);
 
-      // Get subscription data
-      const { data: subscriptionData } = await supabase
-        .from('stripe_user_subscriptions')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      
+      // Get subscription data using DAL
+      const { data: subscriptionData } = await settingsDAL.getUserSubscription(user.id);
       setSubscription(subscriptionData);
     } catch (error) {
       console.error('Error:', error);

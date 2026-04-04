@@ -10,7 +10,7 @@ import { Form, FormItem, FormLabel, FormControl, FormMessage } from "@/component
 import { Badge } from "@/components/ui/badge";
 import { useForm } from "react-hook-form";
 import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
+import { users as usersDAL } from "@/lib/dal";
 import { toast } from "sonner";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { useTranslation } from "@/lib/i18n/context";
@@ -44,11 +44,7 @@ export default function SettingsPage() {
   useEffect(() => {
     async function fetchProfile() {
       if (!user?.id) return;
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("full_name, auth_provider, locale, timezone")
-        .eq("id", user.id)
-        .single();
+      const { data, error } = await usersDAL.getProfileById(user.id);
       if (!error && data) {
         if (data.full_name) {
           setLocalName(data.full_name);
@@ -67,13 +63,10 @@ export default function SettingsPage() {
 
   async function onSubmit(values: { full_name: string }) {
     setSaving(true);
-    const { error } = await supabase
-      .from("profiles")
-      .update({ full_name: values.full_name })
-      .eq("id", user?.id);
+    const { error } = await usersDAL.updateProfile(user?.id || '', { full_name: values.full_name });
     setSaving(false);
     if (error) {
-      toast.error(t('settings.nameUpdateFailed') + ": " + error.message);
+      toast.error(t('settings.nameUpdateFailed') + ": " + error);
     } else {
       setLocalName(values.full_name);
       toast.success(t('settings.nameUpdateSuccess'));
