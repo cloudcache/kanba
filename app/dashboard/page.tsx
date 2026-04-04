@@ -13,7 +13,7 @@ import { useUser } from '@/components/user-provider';
 import { toast } from 'sonner';
 import { Plus, FolderOpen, Calendar, Users, Crown, Bell, CheckSquare, User, Sun, Moon } from 'lucide-react';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
+import { projects as projectsDAL, users as usersDAL, tasks as tasksDAL, columns as columnsDAL } from '@/lib/dal';
 import { useTheme } from 'next-themes';
 
 interface Project {
@@ -70,71 +70,34 @@ export default function DashboardPage() {
     if (!user) return;
     
     try {
-      // Get user profile
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-      
-      setProfile(profile);
+      // Get user profile using DAL
+      const { data: profileData } = await usersDAL.getProfileById(user.id);
+      setProfile(profileData);
 
-      // Get user's own projects
-      const { data: ownedProjects } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+      // Get user's own projects using DAL
+      const { data: ownedProjects } = await projectsDAL.getUserProjects(user.id);
 
-      // Get shared projects (where user is a member but not owner)
-      const { data: sharedProjects } = await supabase
-        .from('projects')
-        .select(`
-          *,
-          project_members!inner(role)
-        `)
-        .neq('user_id', user.id)
-        .eq('project_members.user_id', user.id)
-        .order('created_at', { ascending: false });
+      // Get shared projects using DAL
+      const { data: sharedProjects } = await projectsDAL.getSharedProjects(user.id);
 
       // Combine both lists
       const allProjects = [...(ownedProjects || []), ...(sharedProjects || [])];
-      setProjects(allProjects);
+      setProjects(allProjects as Project[]);
 
-      // Get tasks assigned to the user
-      const { data: tasks } = await supabase
-        .from('tasks')
-        .select(`
-          id,
-          title,
-          priority,
-          due_date,
-          column_id
-        `)
-        .eq('assigned_to', user.id)
-        .order('created_at', { ascending: false })
-        .limit(10);
+      // Get tasks assigned to the user using DAL
+      const { data: tasks } = await tasksDAL.getAssignedTasks(user.id, 10);
 
       if (tasks) {
         // Get column and project info for each task
         const formattedTasks = await Promise.all(
           tasks.map(async (task: any) => {
             // Get column info
-            const { data: column } = await supabase
-              .from('columns')
-              .select(`
-                name,
-                project_id
-              `)
-              .eq('id', task.column_id)
-              .single();
+            const { data: column } = await columnsDAL.getColumnById(task.column_id);
 
             // Get project info
-            const { data: project } = await supabase
-              .from('projects')
-              .select('id, name, slug')
-              .eq('id', column?.project_id)
-              .single();
+            const { data: project } = column?.project_id 
+              ? await projectsDAL.getProjectById(column.project_id)
+              : { data: null };
 
             return {
               id: task.id,
@@ -144,7 +107,7 @@ export default function DashboardPage() {
               project_name: project?.name || 'Unknown Project',
               project_id: project?.id || '',
               project_slug: project?.slug || '',
-              column_name: column?.name || 'Unknown Column',
+              column_name: column?.name || column?.title || 'Unknown Column',
             };
           })
         );
